@@ -166,6 +166,11 @@ chain, mapped layer by layer on 2026-10-02 (WIP port lives on the fork branch
    and decode, and the isolation probes (`bench/k3_discriminator.py`,
    `k3_iso2.py`) that localized the packing mismatch to the byte level.
 
+Status: handled entirely in the fork
+([satindergrewal/TensorFold, branch `mixed-k34`](https://github.com/satindergrewal/TensorFold/tree/mixed-k34) —
+v0.6.0 + the MiaAI-Lab patch stack + the mixed-bits commits). Upstream
+TensorFold 0.6.2 declines mixed-bit rates and ships no logprobs on the
+GLM-5.3 backend; both stay fork-local work.
 
 ### Fidelity of the two quants, measured behaviorally
 
