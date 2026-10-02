@@ -125,21 +125,36 @@ chain, mapped layer by layer on 2026-10-02 (WIP port lives on the fork branch
 3. **Trellis width check** — `exl3_mm.py words()` demanded `int16 [..., 64]`.
    *Relaxed on the fork branch* (3-bit `[..., 48]` accepted; k3 trellises
    unpack through the same MCG math, which is bits-generic).
-4. **THE REMAINING WALL — k3 CUDA decode.** `weights.py:378 moe_exl3` stacks
-   per-expert trellises into `[E, K/16, N/16, 32]` int32 and the CUDA decode
-   kernel reads that fixed 4-bit layout; k3 experts (24-word trellises) cannot
-   stack. The port went deeper before stopping: with the stacked check relaxed
-   and k3 trellises flowed through the per-expert-width path
-   (`x3experts.prepare` + `x3experts.routed/Scratch`, the ABI the qwen4_exp
-   CUDA lane serves through, whose kernels take `k2` per expert at runtime),
-   **k4 experts decode correctly but every k3 expert produces repetition-salad
-   garbage** (measured 2026-10-02: GSM8K-25 0/25 with verbatim
-   "Matt's blue fiber and half Matt's blue fiber..." loops — the TensorFold
-   MCG trellis kernel does not decode 3-bit MCG states; a fix belongs in this fork's kernel port). **Remaining work:** port the k3 MCG trellis decode math into
-   TensorFold's `experts.cu` (reference: the b12x kernels in the companion
-   3.5bpw repo that score 96.89 GSM8K on the same artifact via vLLM).
-   Misdequant risk is now measured, not hypothetical — this is why the switch
-   ships with the 3.5bpw arm off.
+4. **THE REMAINING WALL — trellis packing mismatch in the mixed launch.**
+   `weights.py:378 moe_exl3` stacks per-expert trellises into
+   `[E, K/16, N/16, 32]` int32 (the GLM int32-word packing) and the CUDA
+   decode kernel reads that fixed layout; k3 experts (24-word trellises)
+   cannot stack. The port went deep before stopping — the full chain
+   (config parse, family gate, trellis width check, per-expert-width load
+   through `x3experts.prepare`, decode through `x3experts.routed`) **runs
+   end-to-end on the mixed artifact**, and the isolated decode verdicts are
+   exact and inverted: **k3 trellises decode bit-perfect through the K2=6
+   device path** (GPU kernel vs python MCG unpack: max diff 0.000000 on a
+   48-wide trellis), **while k4 trellises decode to garbage through the
+   K2=8 grouped path on this artifact** (E=2 mixed launch: k3 rows match
+   python to 2.05 max — fp16 noise; k4 rows off by up to 285).
+
+   Root cause, as measured: the k35 mixed encode stores **all** trellises
+   int16-native (I16 [..., 48] / [..., 64] — the b12x/vLLM packing), while
+   TensorFold's own 4bpw artifacts store trellises as int32 words
+   (I32 [..., 32] — the GLM packing). TensorFold's decode kernels are
+   K2-templated with per-K2 bit-stream layouts: the K2=6 branch happens to
+   match the k35's int16-native k3 packing (never exercised by the 4bpw,
+   which has no k3 experts), and the K2=8 branch matches the GLM int32-word
+   packing but **not** the k35's int16-native k4 packing (the k35's k4
+   dequant through the *linear* kernel matches python exactly — the packing
+   difference only bites in the grouped MoE matmul).
+
+   **Remaining work:** a load-time trellis repack (int16-native → GLM
+   int32-word) for the mixed artifact's k4 trellises — byte-level, testable
+   against `exl3.py dequantize` per tile — or the equivalent in-kernel
+   layout switch. Until then the 3.5bpw arm under TensorFold produces
+   repetition-salad (measured: GSM8K-25 0/25, verbatim loops) and stays off.
 
 
 ### Fidelity of the two quants, measured behaviorally
