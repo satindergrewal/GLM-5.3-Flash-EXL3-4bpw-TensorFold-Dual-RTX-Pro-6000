@@ -135,6 +135,7 @@ to b12x's trellis decode). That is an engine contribution for upstream
 risk without it is silent garbage, so this recipe ships the switch but serves
 4bpw until the loader exists.
 
+
 ### Fidelity of the two quants, measured behaviorally
 
 Full-vocab KLD is not measurable on this stack: TensorFold implements **no
