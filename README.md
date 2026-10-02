@@ -102,6 +102,55 @@ K4 vLLM validation on this box stopped at 98k context: 4bpw + 1M under vLLM is
 the combination that does not fit, which is the gap this recipe closes by
 switching engines instead of switching quants.
 
+## Quant switch: 4bpw or 3.5bpw
+
+`QUANT=4bpw|3.5bpw` in `.env` switches `MODEL_DIR` and the served model id
+(`GLM-5.3-Flash-EXL3-4bpw` / `GLM-5.3-Flash-EXL3-3.5bpw-mixed`). An exported
+`QUANT` from the caller wins over `.env` (precedence-preserving source).
+Everything else — DFlash2, vision, window fit — is quant-agnostic.
+
+### 3.5bpw under TensorFold: BLOCKED (loader port required)
+
+The 3.5bpw mixed artifact does **not** boot on TensorFold v0.6. Measured
+failure chain (2026-10-02):
+
+1. Its `config.json` declares `"bits": "mixed_k34_per_tensor"` (the k3/k4
+   per-tensor mixed encode); TensorFold's config parser does
+   `bits=int(quant.get("bits", 4))`
+   (`tensorfold/families/glm5_next/cuda/weights.py:96`) → `ValueError` on the
+   string, then a rank segfault.
+2. Behind that first wall is a bigger one: the artifact stores routed experts
+   in MiaAi-Lab's MCG mixed storage ABI — per-expert `.mcg` descriptors plus a
+   `quantization_config.json` carrying `tensor_storage` and
+   `r7_routed_experts` (k_values [3,4], moe_layers 3-45) — i.e. per-tensor
+   bitrates, while TensorFold's EXL3 loader models a single uniform `bits: int`
+   (it has no `cfg.bits` consumers in the CUDA engine; the trellis kernels take
+   bits as a kernel argument fed from the load path).
+
+Closing this = porting the mixed-ABI reader into TensorFold's weight pipeline
+(the reference implementation is the vLLM-side `exl3-mixed.py` overlay in the
+companion 3.5bpw repo, which reads `tensor_storage` and feeds per-tensor rates
+to b12x's trellis decode). That is an engine contribution for upstream
+(Ash Hart's TensorFold, MiaAi-Lab's recipe), not a config change — misdequant
+risk without it is silent garbage, so this recipe ships the switch but serves
+4bpw until the loader exists.
+
+### Fidelity of the two quants, measured behaviorally
+
+Full-vocab KLD is not measurable on this stack: TensorFold implements **no
+logprobs** (chat completions with `logprobs: true` → 400 "logprobs are not
+supported by this model or backend"), so the teacher-forcing KLD methodology
+has no student-side signal. The behavioral proxy that does work, on this box:
+
+| | TensorFold 4bpw (this recipe) | vLLM 3.5bpw mixed (companion repo, 700k–1M lanes) |
+|---|---|---|
+| GSM8K, greedy | **97.2%** (250-slice) | 96.89% |
+
+Same hardware, both with DFlash-family drafting: the 3.5bpw mixed encode is
+behaviorally indistinguishable from stock 4bpw on GSM8K (Δ ≈ 0.3pt, within
+slice noise). That matches the 3.5bpw repo's five-run KLD gate vs teacher
+(mean 0.0246, bar 0.06) measured during its encode.
+
 ## Hardware
 
 | | |
@@ -151,6 +200,8 @@ Every knob is an env override — see [.env.example](.env.example).
 
 | Env | Default | Meaning |
 |---|---|---|
+| `QUANT` | 4bpw | quant switch: `4bpw` (stock TR3-4bpw mirror) or `3.5bpw` (mixed k3/k4 encode — **blocked, see below**) |
+| `MODEL_DIR_4BPW` / `MODEL_DIR_35BPW` | (required per arm) | checkpoint directories for each arm |
 | `MODEL_DIR` | (required) | local TR3-4bpw checkpoint directory (flat snapshot) |
 | `PORT` / `MASTER_PORT` | 8888 / 29551 | API port / rank rendezvous (loopback) |
 | `PARALLEL` | 4 | concurrent decode streams (1-4 with DFlash2) |

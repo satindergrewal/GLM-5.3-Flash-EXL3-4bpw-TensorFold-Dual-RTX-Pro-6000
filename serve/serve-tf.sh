@@ -6,9 +6,38 @@
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")/.."
 
+# per-box overrides: ./.env (sourced as bash, see .env.example).
+# Precedence: an exported variable from the caller's environment wins over .env
+# (so `QUANT=4bpw ./serve/serve-tf.sh` overrides a .env that says 3.5bpw).
+declare -A _env_before=()
+while IFS= read -r _n; do _env_before[$_n]=${!_n}; done < <(compgen -e)
+[[ -f .env ]] && source .env
+for _n in "${!_env_before[@]}"; do
+  [[ "${!_n-}" == "${_env_before[$_n]}" ]] || export "$_n=${_env_before[$_n]}"
+done
+unset _env_before
+
 TF_VERSION="${TF_VERSION:-v0.6.0}"
 IMAGE="${IMAGE:-tensorfold-glm53:${TF_VERSION}}"
-MODEL_DIR="${MODEL_DIR:?set MODEL_DIR to the local TR3-4bpw checkpoint directory (flat snapshot layout)}"
+
+# --- quant switch: stock 4bpw mirror, or the 3.5bpw mixed encode -------------
+QUANT="${QUANT:-4bpw}"                 # 4bpw | 3.5bpw
+MODEL_DIR_4BPW="${MODEL_DIR_4BPW:-}"
+MODEL_DIR_35BPW="${MODEL_DIR_35BPW:-}"
+case "$QUANT" in
+  4bpw)
+    [[ -n "$MODEL_DIR_4BPW" ]] || { echo "ERROR: QUANT=4bpw needs MODEL_DIR_4BPW"; exit 1; }
+    MODEL_DIR="$MODEL_DIR_4BPW"
+    SERVED_NAME="${SERVED_NAME:-GLM-5.3-Flash-EXL3-4bpw}"
+    ;;
+  3.5bpw)
+    [[ -n "$MODEL_DIR_35BPW" ]] || { echo "ERROR: QUANT=3.5bpw needs MODEL_DIR_35BPW"; exit 1; }
+    MODEL_DIR="$MODEL_DIR_35BPW"
+    SERVED_NAME="${SERVED_NAME:-GLM-5.3-Flash-EXL3-3.5bpw-mixed}"
+    ;;
+  *)
+    echo "ERROR: QUANT must be 4bpw or 3.5bpw (got: $QUANT)"; exit 1 ;;
+esac
 HF_DIR="${HF_DIR:-$PWD/hf}"
 CACHE_DIR="${CACHE_DIR:-$PWD/cache}"
 NAME="${NAME:-glm53-flash-tf-box}"
@@ -43,6 +72,7 @@ docker run -d --name "$NAME" --gpus all \
   -e HF_HUB_OFFLINE=1 \
   -e TF_GLM_KV="$KV" -e TF_GLM_DENSE="$DENSE" -e TF_GLM_COMM="$COMM" \
   -e TENSORFOLD_GLM_MAX_IMAGES="$MAX_IMAGES" \
+  -e SERVED_NAME="$SERVED_NAME" -e QUANT="$QUANT" \
   -e TF_GLM_CACHE_GIB="$CACHE_GIB" \
   -e TENSORFOLD_MEMORY_RESERVE_GIB="$RESERVE_GIB" \
   -e TORCH_EXTENSIONS_DIR=/cache/torch_extensions -e TRITON_CACHE_DIR=/cache/triton \
