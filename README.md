@@ -4,12 +4,15 @@ Stock-quantization GLM-5.3-Flash on 2x RTX PRO 6000 (SM120, 96 GB each), single
 box: **the full 1,048,576-token native window + 4 concurrent streams + vision +
 DFlash2 speculative decoding, at the unmodified 4bpw checkpoint.**
 
-No custom quant. No per-layer mixing. This is MiaAi-Lab's
-[Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw](https://huggingface.co/Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw)
-served by [TensorFold](https://github.com/ashhart/TensorFold) v0.6 in `COMM=nccl`
-mode — the first (to our knowledge) published TensorFold recipe for x86_64
-discrete GPUs. The same 192 GB that needs a 3.5bpw mixed encode under vLLM
-(see the companion repo
+No custom quant. No per-layer mixing. This is GLM-5.3-Flash EXL3 TR3-4bpw —
+quantized by MiaAi-Lab
+([Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw](https://huggingface.co/Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw),
+served from the byte-identical
+[brandonmusic/GLM-5.3-Flash-tr3-4bpw](https://huggingface.co/brandonmusic/GLM-5.3-Flash-tr3-4bpw)
+mirror) — running on [TensorFold](https://github.com/ashhart/TensorFold) v0.6 in
+`COMM=nccl` mode — the first (to our knowledge) published TensorFold recipe for
+x86_64 discrete GPUs. The same 192 GB that needs a 3.5bpw mixed encode under
+vLLM (see the companion repo
 [GLM-5.3-Flash-EXL3-3.5bpw-Mixed-SM120-TP2](https://github.com/satindergrewal/GLM-5.3-Flash-EXL3-3.5bpw-Mixed-SM120-TP2))
 holds stock 4bpw + 1M window here, because TensorFold's runtime carries no
 vLLM-style context-proportional workspace and repacks dense weights to q4.
@@ -165,6 +168,11 @@ tags, OCI labels, tf.patches survival check).
 
 ## Credits and licenses
 
+- [GLM-5.3-Flash-EXL3-TR3-4bpw](https://huggingface.co/Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw)
+  — the checkpoint, quantized by MiaAi-Lab (EXL3/TR3 MCG, routed experts 4bpw).
+- [brandonmusic/GLM-5.3-Flash-tr3-4bpw](https://huggingface.co/brandonmusic/GLM-5.3-Flash-tr3-4bpw)
+  — the durable public mirror this recipe actually serves (byte-identical to
+  the Mia-AiLab upload; the box copy came from here).
 - [TensorFold](https://github.com/ashhart/TensorFold) by Ash Hart — Apache-2.0.
   The engine; this recipe just aims it at x86_64 discrete GPUs.
 - [MiaAI-Lab's Spark recipe](https://github.com/MiaAI-Lab/GLM-5.3-Flash-EXL3-2x-DGX-Sparks-TensorFold)
