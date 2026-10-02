@@ -156,6 +156,16 @@ chain, mapped layer by layer on 2026-10-02 (WIP port lives on the fork branch
    layout switch. Until then the 3.5bpw arm under TensorFold produces
    repetition-salad (measured: GSM8K-25 0/25, verbatim loops) and stays off.
 
+   Scope note (2026-10-02, full artifact scan): 4,880 experts are pure k4,
+   4,823 pure k3, and **2,681 are split-projection** (gate/up/down at
+   different rates). A complete mixed serve therefore needs
+   per-projection-per-rate decode groups (up to 6 sub-launches per layer)
+   plus a k3-capable CUDA trellis decode — an engine-port project measured
+   in days. The fork branch `mixed-k34` carries everything up to this wall:
+   config parse, family gate, trellis width check, per-expert-width load
+   and decode, and the isolation probes (`bench/k3_discriminator.py`,
+   `k3_iso2.py`) that localized the packing mismatch to the byte level.
+
 
 ### Fidelity of the two quants, measured behaviorally
 
