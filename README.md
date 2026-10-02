@@ -109,31 +109,37 @@ switching engines instead of switching quants.
 `QUANT` from the caller wins over `.env` (precedence-preserving source).
 Everything else — DFlash2, vision, window fit — is quant-agnostic.
 
-### 3.5bpw under TensorFold: BLOCKED (loader port required)
+### 3.5bpw under TensorFold: BLOCKED (kernel/ABI port required)
 
-The 3.5bpw mixed artifact does **not** boot on TensorFold v0.6. Measured
-failure chain (2026-10-02):
+The 3.5bpw mixed artifact does **not** boot on TensorFold v0.6.x. The failure
+chain, mapped layer by layer on 2026-10-02 (WIP port lives on the fork branch
+[`mixed-k34`](https://github.com/satindergrewal/TensorFold/tree/mixed-k34)):
 
-1. Its `config.json` declares `"bits": "mixed_k34_per_tensor"` (the k3/k4
-   per-tensor mixed encode); TensorFold's config parser does
-   `bits=int(quant.get("bits", 4))`
-   (`tensorfold/families/glm5_next/cuda/weights.py:96`) → `ValueError` on the
-   string, then a rank segfault.
-2. Behind that first wall is a bigger one: the artifact stores routed experts
-   in MiaAi-Lab's MCG mixed storage ABI — per-expert `.mcg` descriptors plus a
-   `quantization_config.json` carrying `tensor_storage` and
-   `r7_routed_experts` (k_values [3,4], moe_layers 3-45) — i.e. per-tensor
-   bitrates, while TensorFold's EXL3 loader models a single uniform `bits: int`
-   (it has no `cfg.bits` consumers in the CUDA engine; the trellis kernels take
-   bits as a kernel argument fed from the load path).
-
-Closing this = porting the mixed-ABI reader into TensorFold's weight pipeline
-(the reference implementation is the vLLM-side `exl3-mixed.py` overlay in the
-companion 3.5bpw repo, which reads `tensor_storage` and feeds per-tensor rates
-to b12x's trellis decode). That is an engine contribution for upstream
-(Ash Hart's TensorFold, MiaAi-Lab's recipe), not a config change — misdequant
-risk without it is silent garbage, so this recipe ships the switch but serves
-4bpw until the loader exists.
+1. **Config parse** — `"bits": "mixed_k34_per_tensor"` hits
+   `bits=int(quant.get("bits", 4))` (`weights.py:96`). *Fixed on the fork
+   branch* (non-int bits fall back to 4 for geometry; the trellis tensors
+   carry their own widths).
+2. **Family gate** — `glm5_next/__init__.py:50` validates against the uniform
+   `EXL3_VARIANT` and `int()`s the mixed marker. *Fixed on the fork branch*
+   (the mixed k3/k4 variant is accepted: mixed mcg, allowed_bits [3, 4]).
+3. **Trellis width check** — `exl3_mm.py words()` demanded `int16 [..., 64]`.
+   *Relaxed on the fork branch* (3-bit `[..., 48]` accepted; k3 trellises
+   unpack through the same MCG math, which is bits-generic).
+4. **THE REMAINING WALL — stacked-uniform expert ABI.** `weights.py:378
+   moe_exl3` stacks per-expert trellises into `[E, K/16, N/16, 32]` int32 and
+   the CUDA decode kernel reads that fixed 4-bit layout; k3 experts (24-word
+   trellises) cannot stack (`RuntimeError: stack expects each tensor to be
+   equal size: [256, 64, 32] vs [256, 64, 24]`). The per-expert-width
+   structures already exist — `cuda/exl3/experts.py prepare()` builds
+   `Exl3RoutedExperts` with per-expert trellis pointers and per-expert `k2`
+   ("each at its own width"), and the qwen4_exp CUDA lane serves through
+   exactly that ABI — but GLM-5.3's decode has no consumer for it yet.
+   **Remaining work:** give GLM's MoE decode a path over
+   `x3experts.Exl3RoutedExperts` + `x3experts.Scratch`/`routed` for mixed
+   layers, and verify the expert kernel's k3 decode (k2 comes from the trellis
+   shape; whether the SM120 kernel decodes k2≠k2_of(4) correctly is the open
+   question). Misdequant risk without that verification is why this ships as
+   a fork branch, not a serving option.
 
 
 ### Fidelity of the two quants, measured behaviorally
