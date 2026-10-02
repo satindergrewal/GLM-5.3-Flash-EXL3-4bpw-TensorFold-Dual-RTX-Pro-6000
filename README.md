@@ -150,11 +150,25 @@ chain, mapped layer by layer on 2026-10-02 (WIP port lives on the fork branch
    dequant through the *linear* kernel matches python exactly — the packing
    difference only bites in the grouped MoE matmul).
 
-   **Remaining work:** a load-time trellis repack (int16-native → GLM
-   int32-word) for the mixed artifact's k4 trellises — byte-level, testable
-   against `exl3.py dequantize` per tile — or the equivalent in-kernel
-   layout switch. Until then the 3.5bpw arm under TensorFold produces
-   repetition-salad (measured: GSM8K-25 0/25, verbatim loops) and stays off.
+   **Measured on the fully-patched serving image (2026-10-02, re-verified
+   after an earlier stale-image false alarm):** the mixed layers decode
+   through `x3experts.routed` and **k3 experts are correct while k4 experts
+   in the same launch produce garbage** (isolated per-expert checks: k3
+   through `x3experts.routed` matches python to fp16 noise; GSM8K-25 0/25
+   with verbatim repetition loops on the full serve). The generic grouped
+   kernel reads per-expert k2 at runtime and its launch ranges cover
+   K2 ∈ [2, 10] — both rates are in range, yet the k2=8 decode corrupts in
+   this kernel while the same bytes decode exactly through the linear
+   dequant kernel and the python MCG unpack. **Remaining work:** a
+   k3-decode-capable grouped kernel (or per-k2 sub-launches splitting each
+   mixed layer's experts), plus per-projection decode groups for the 2,681
+   split-projection experts (full artifact scan: 4,880 pure-k4 / 4,823
+   pure-k3 / 2,681 mixed-projection). That is TensorFold-CUDA-engine work —
+   a fix belongs in this fork's kernel port; the fork branch
+   `mixed-k34` is the base. Until it lands, the 3.5bpw arm under TensorFold
+   produces repetition-salad (measured: GSM8K-25 0/25 on the verified
+   image) and stays off; the 4bpw arm serves the same window with measured
+   97.2% GSM8K.
 
    Scope note (2026-10-02, full artifact scan): 4,880 experts are pure k4,
    4,823 pure k3, and **2,681 are split-projection** (gate/up/down at
