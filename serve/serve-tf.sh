@@ -29,11 +29,13 @@ case "$QUANT" in
     [[ -n "$MODEL_DIR_4BPW" ]] || { echo "ERROR: QUANT=4bpw needs MODEL_DIR_4BPW"; exit 1; }
     MODEL_DIR="$MODEL_DIR_4BPW"
     SERVED_NAME="${SERVED_NAME:-GLM-5.3-Flash-EXL3-4bpw}"
+    VISION="${VISION:-1}"
     ;;
   3.5bpw)
     [[ -n "$MODEL_DIR_35BPW" ]] || { echo "ERROR: QUANT=3.5bpw needs MODEL_DIR_35BPW"; exit 1; }
     MODEL_DIR="$MODEL_DIR_35BPW"
     SERVED_NAME="${SERVED_NAME:-GLM-5.3-Flash-EXL3-3.5bpw-mixed}"
+    VISION="${VISION:-0}"     # the k35 artifact's chat template has no media branch: text-only under TensorFold
     ;;
   *)
     echo "ERROR: QUANT must be 4bpw or 3.5bpw (got: $QUANT)"; exit 1 ;;
@@ -71,7 +73,7 @@ docker run -d --name "$NAME" --gpus all \
   -v "$PWD/serve/start-ranks.sh:/workspace/start-ranks.sh:ro" \
   -e HF_HUB_OFFLINE=1 \
   -e TF_GLM_KV="$KV" -e TF_GLM_DENSE="$DENSE" -e TF_GLM_COMM="$COMM" \
-  -e TENSORFOLD_GLM_MAX_IMAGES="$MAX_IMAGES" \
+  -e TENSORFOLD_GLM_MAX_IMAGES="$MAX_IMAGES" -e VISION="$VISION" \
   -e SERVED_NAME="$SERVED_NAME" -e QUANT="$QUANT" \
   -e TF_GLM_CACHE_GIB="$CACHE_GIB" \
   -e TENSORFOLD_MEMORY_RESERVE_GIB="$RESERVE_GIB" \

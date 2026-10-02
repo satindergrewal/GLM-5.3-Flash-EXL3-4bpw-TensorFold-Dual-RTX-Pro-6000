@@ -125,21 +125,21 @@ chain, mapped layer by layer on 2026-10-02 (WIP port lives on the fork branch
 3. **Trellis width check** — `exl3_mm.py words()` demanded `int16 [..., 64]`.
    *Relaxed on the fork branch* (3-bit `[..., 48]` accepted; k3 trellises
    unpack through the same MCG math, which is bits-generic).
-4. **THE REMAINING WALL — stacked-uniform expert ABI.** `weights.py:378
-   moe_exl3` stacks per-expert trellises into `[E, K/16, N/16, 32]` int32 and
-   the CUDA decode kernel reads that fixed 4-bit layout; k3 experts (24-word
-   trellises) cannot stack (`RuntimeError: stack expects each tensor to be
-   equal size: [256, 64, 32] vs [256, 64, 24]`). The per-expert-width
-   structures already exist — `cuda/exl3/experts.py prepare()` builds
-   `Exl3RoutedExperts` with per-expert trellis pointers and per-expert `k2`
-   ("each at its own width"), and the qwen4_exp CUDA lane serves through
-   exactly that ABI — but GLM-5.3's decode has no consumer for it yet.
-   **Remaining work:** give GLM's MoE decode a path over
-   `x3experts.Exl3RoutedExperts` + `x3experts.Scratch`/`routed` for mixed
-   layers, and verify the expert kernel's k3 decode (k2 comes from the trellis
-   shape; whether the SM120 kernel decodes k2≠k2_of(4) correctly is the open
-   question). Misdequant risk without that verification is why this ships as
-   a fork branch, not a serving option.
+4. **THE REMAINING WALL — k3 CUDA decode.** `weights.py:378 moe_exl3` stacks
+   per-expert trellises into `[E, K/16, N/16, 32]` int32 and the CUDA decode
+   kernel reads that fixed 4-bit layout; k3 experts (24-word trellises) cannot
+   stack. The port went deeper before stopping: with the stacked check relaxed
+   and k3 trellises flowed through the per-expert-width path
+   (`x3experts.prepare` + `x3experts.routed/Scratch`, the ABI the qwen4_exp
+   CUDA lane serves through, whose kernels take `k2` per expert at runtime),
+   **k4 experts decode correctly but every k3 expert produces repetition-salad
+   garbage** (measured 2026-10-02: GSM8K-25 0/25 with verbatim
+   "Matt's blue fiber and half Matt's blue fiber..." loops — the TensorFold
+   MCG trellis kernel does not decode 3-bit MCG states; a fix belongs in this fork's kernel port). **Remaining work:** port the k3 MCG trellis decode math into
+   TensorFold's `experts.cu` (reference: the b12x kernels in the companion
+   3.5bpw repo that score 96.89 GSM8K on the same artifact via vLLM).
+   Misdequant risk is now measured, not hypothetical — this is why the switch
+   ships with the 3.5bpw arm off.
 
 
 ### Fidelity of the two quants, measured behaviorally
