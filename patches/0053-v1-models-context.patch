@@ -1,0 +1,24 @@
+--- tensorfold/cuda/http.py
++++ tensorfold/cuda/http.py
+@@ -69,8 +69,19 @@
+             if route in ("/metrics", "/v1/metrics"):
+                 return metrics.send(self, app)
+             if self.path.rstrip("/") in ("/v1/models", "/models"):
+-                self._json(200, {"object": "list", "data": [{"id": model_id, "object": "model", "owned_by": "tensorfold"}
+-                                                            for model_id in app.model_ids]})
++                created = int(time.time())
++                snap = health.of(app).snapshot(app)
++                permission = [{"id": f"modelperm-{model_id}", "object": "model_permission", "created": created,
++                               "allow_create_engine": False, "allow_sampling": True, "allow_logprobs": True,
++                               "allow_search_indices": False, "allow_view": True, "allow_fine_tuning": False,
++                               "organization": "*", "group": None, "is_blocking": False}
++                              for model_id in app.model_ids]
++                self._json(200, {"object": "list", "data": [{"id": model_id, "object": "model", "created": created,
++                                                             "owned_by": "tensorfold",
++                                                             "root": str(app.model_dir or "/model"), "parent": None,
++                                                             "max_model_len": int(snap.get("context_length") or 0),
++                                                             "permission": [perm]}
++                                                            for model_id, perm in zip(app.model_ids, permission)]})
+             elif self.path.rstrip("/") in ("/health", "/v1/health"):
+                 self._json(200, health.of(app).snapshot(app))
+             elif responses.route(self.path):

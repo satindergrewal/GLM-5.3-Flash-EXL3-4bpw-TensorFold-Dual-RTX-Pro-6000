@@ -1,0 +1,159 @@
+# GLM-5.3-Flash EXL3 4bpw (stock) - TensorFold v0.6 - Dual RTX Pro 6000
+
+Stock-quantization GLM-5.3-Flash on 2x RTX PRO 6000 (SM120, 96 GB each), single
+box: **the full 1,048,576-token native window + 4 concurrent streams + vision +
+DFlash2 speculative decoding, at the unmodified 4bpw checkpoint.**
+
+No custom quant. No per-layer mixing. This is MiaAi-Lab's
+[Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw](https://huggingface.co/Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw)
+served by [TensorFold](https://github.com/ashhart/TensorFold) v0.6 in `COMM=nccl`
+mode — the first (to our knowledge) published TensorFold recipe for x86_64
+discrete GPUs. The same 192 GB that needs a 3.5bpw mixed encode under vLLM
+(see the companion repo
+[GLM-5.3-Flash-EXL3-3.5bpw-Mixed-SM120-TP2](https://github.com/satindergrewal/GLM-5.3-Flash-EXL3-3.5bpw-Mixed-SM120-TP2))
+holds stock 4bpw + 1M window here, because TensorFold's runtime carries no
+vLLM-style context-proportional workspace and repacks dense weights to q4.
+
+## Validated (2026-10-02, this exact stack)
+
+| Check | Result |
+|---|---|
+| Window allocated | 1,048,576 tokens, both ranks (88.09 / 86.29 GiB within 90.08 GiB budgets) |
+| Long-context recall | 826,051-token prompt, needle at 87% depth: **retrieved exactly**, DFlash2 drafting on |
+| Health/geometry | rank 0 + rank 1 ready in ~209 s (warm caches); API healthy |
+| Vision | tower loaded; image cap raised to 128/request (see patches) |
+| `/v1/models` | vLLM-compatible shape incl. `max_model_len` (recipe patch 0053-v1-models-context) |
+
+**Testing status: NOT rigorously tested.** Not yet run: decode-throughput
+benchmarks, GSM8K/HumanEval, multi-image soak, video input, long agentic soak,
+multi-day stability. Numbers appear here only when measured.
+
+## Hardware
+
+| | |
+|---|---|
+| GPUs | 2x NVIDIA RTX PRO 6000 Blackwell 96 GB (validated on a mixed Workstation + Max-Q pair, PCIe) |
+| System | x86_64 Linux, 125 GB RAM, driver 580.178.04 (container runs CUDA 13.3 userspace via forward compatibility) |
+| Software | Docker + NVIDIA Container Toolkit (CDI), ~35 GB disk for the image, ~172 GB for the checkpoint |
+| Network | none between ranks beyond the host loopback — `COMM=nccl`, no InfiniBand/RoCE needed |
+
+## Quick start
+
+```bash
+./download-dflash2.sh     # DFlash2 draft (2.2 GiB, pinned revision) into ./hf
+./build-image.sh          # tensorfold-glm53:v0.6.0 (base image + TensorFold + 54 patches)
+./serve/serve-tf.sh       # both ranks, waits for nothing; poll /health
+./stop.sh                 # remove the container
+```
+
+Then:
+
+```bash
+curl -s http://127.0.0.1:8888/health
+curl -s http://127.0.0.1:8888/v1/models | jq '.data[0].max_model_len'   # 1048560
+```
+
+Boot is ~3.5 min with warm kernel caches; the first boot compiles the CUDA
+extensions per GPU (count ~20-40 min). Point `MODEL_DIR` at any local copy of
+the TR3-4bpw checkpoint (flat snapshot layout, 120 shards + config.json).
+
+Every knob is an env override — see [.env.example](.env.example).
+
+## What runs (the stack, layer by layer)
+
+| Layer | What | Where |
+|---|---|---|
+| API | OpenAI-compatible (`/v1/chat/completions`, tools, reasoning, vision) | TensorFold rank 0, port 8888 |
+| Engine | TensorFold 0.6.0, CUDA lane, TP2 | two ranks, one container |
+| Model | GLM-5.3-Flash 320B MoE, stock TR3-4bpw EXL3 (routed experts 4bpw, BF16 elsewhere) | `/model` mount |
+| Dense repack | q4 groups-of-64, head FP8, kv_b BF16 (`TF_GLM_DENSE=q4`) | at load |
+| KV cache | fp8 (e4m3 + power-of-two scales), 1,048,576-token shared pool | `TF_GLM_KV=fp8` |
+| Spec decode | DFlash2, pinned `bf582e4e` | `--drafter` |
+| Parallelism | TP2, 4 decode streams, single box | `--tp 2 --parallel 4` |
+| Comm | NCCL over PCIe, `COMM=nccl` (no RoCE) | `TF_GLM_COMM` |
+| Context | 1,048,576 window (auto-fit, `--context 0`) | enforced limit 1,048,560 |
+
+## Parameters
+
+| Env | Default | Meaning |
+|---|---|---|
+| `MODEL_DIR` | (required) | local TR3-4bpw checkpoint directory (flat snapshot) |
+| `PORT` / `MASTER_PORT` | 8888 / 29551 | API port / rank rendezvous (loopback) |
+| `PARALLEL` | 4 | concurrent decode streams (1-4 with DFlash2) |
+| `CONTEXT` | 0 (auto-fit) | pin a window (e.g. 728883) to free memory for other things |
+| `MAX_TOKENS` | 32768 | reply budget when the client sends none |
+| `TF_GLM_KV` | fp8 | `fp8` (1M window) or `bf16` (exact, ~196k window) |
+| `TF_GLM_DENSE` | q4 | dense-weight repack: `q4` / `fp8` / `bf16` |
+| `TF_GLM_COMM` | nccl | `nccl` (PCIe) or `roce` (Spark pairs) |
+| `TENSORFOLD_GLM_MAX_IMAGES` | 128 | images per request (upstream default 50) |
+| `TF_GLM_CACHE_GIB` | 0 | kept-prompt pool GiB; raise (4-12.5) to enable cross-request prefix reuse at the cost of window |
+| `TENSORFOLD_MEMORY_RESERVE_GIB` | 4 | host-memory floor for the window fit; raise if other work shares the box |
+
+## Memory geometry (why 4bpw + 1M fits here)
+
+The window fit is decided at startup from per-rank budgets. Measured ladder on
+96 GB cards (rank 0, vision on, DFlash2):
+
+| TF_GLM_CACHE_GIB | TENSORFOLD_MEMORY_RESERVE_GIB | largest window |
+|---|---|---|
+| 12.5 (Spark default) | 14.5 | 490,707 |
+| 0 | 8 | 728,883 |
+| 0 | 4 | **1,048,576 (full)** |
+
+Consequences of `CACHE_GIB=0`, stated plainly: cross-request prefix reuse is
+off (`kept_prompts: 0` in `/health`) — every new conversation re-prefills its
+system prompt. A single deep session can own the whole window; 4 concurrent
+sessions share the same 1,048,576-token pool (~260k each). If your workload is
+many short agent sessions with a shared long system prompt, raise
+`TF_GLM_CACHE_GIB` and accept a smaller window.
+
+## Patches
+
+`patches/` is MiaAi-Lab's full TensorFold recipe patch stack (0001-0053,
+carried unmodified from
+[GLM-5.3-Flash-EXL3-2x-DGX-Sparks-TensorFold](https://github.com/MiaAI-Lab/GLM-5.3-Flash-EXL3-2x-DGX-Sparks-TensorFold))
+plus one addition:
+
+- `0053-v1-models-context.patch` — `/v1/models` returns a vLLM-compatible
+  object: `created`, `root`, `max_model_len` (read from the enforcement side,
+  so it tracks `--context`/`KV`/`PARALLEL`), and a minimal `permission` block.
+  Upstream v0.6 emits a bare `{id, object, owned_by}` and communicates the
+  window only via request-time 400s.
+
+The build stamps the patches hash into the image label `tf.patches`;
+`build-image.sh` recomputes and pins it.
+
+## Publishing
+
+`publish-docker.sh` pushes `tensorfold-glm53:v0.6.0-<hash>` and `:latest` to
+Docker Hub (user via `DOCKER_USER` or your existing `docker login`), with OCI
+source/license labels. ~24.5 GB uncompressed; only changed layers upload on
+re-push.
+
+## Credits and licenses
+
+- [TensorFold](https://github.com/ashhart/TensorFold) by Ash Hart — Apache-2.0.
+  The engine; this recipe just aims it at x86_64 discrete GPUs.
+- [MiaAI-Lab's Spark recipe](https://github.com/MiaAI-Lab/GLM-5.3-Flash-EXL3-2x-DGX-Sparks-TensorFold)
+  — the patch stack, build pipeline, and the reference two-Spark launcher this
+  adapts. Their `rsync -a -L` worker-copy fix and `TENSORFOLD_GLM_MAX_IMAGES`
+  patch are included here via their own patches.
+- [incoai/GLM-5.3-Flash-DFlash2](https://huggingface.co/incoai/GLM-5.3-Flash-DFlash2)
+  — draft model, **CC BY-NC-ND 4.0: non-commercial use only**.
+- Community prior art on this hardware class: Cardillo's 2x RTX PRO 6000 vLLM
+  recipe and the verdictai SM120 images.
+
+## Repository layout
+
+```
+patches/            54 unified diffs (upstream stack + v1-models-context)
+Dockerfile          x86_64 image: NVIDA PyTorch base + TensorFold v0.6.0 + patches
+build-image.sh      hash-stamped image build
+download-dflash2.sh pinned DFlash2 fetch into ./hf
+serve/serve-tf.sh   launcher: one container, both ranks, per-rank CUDA_VISIBLE_DEVICES
+serve/start-ranks.sh  rank processes (rank1 bg, rank0 fg)
+stop.sh / status.sh lifecycle + one-glance state
+publish-docker.sh   Docker Hub push (version-hash + latest)
+.env.example        every knob
+docs/MEMORY-GEOMETRY.md   the fitting ladder and its trade-offs
+```
