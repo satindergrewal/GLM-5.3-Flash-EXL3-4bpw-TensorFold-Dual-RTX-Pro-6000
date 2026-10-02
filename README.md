@@ -24,9 +24,41 @@ vLLM-style context-proportional workspace and repacks dense weights to q4.
 | Vision | tower loaded; image cap raised to 128/request (see patches) |
 | `/v1/models` | vLLM-compatible shape incl. `max_model_len` (recipe patch 0053-v1-models-context) |
 
-**Testing status: NOT rigorously tested.** Not yet run: decode-throughput
-benchmarks, GSM8K/HumanEval, multi-image soak, video input, long agentic soak,
-multi-day stability. Numbers appear here only when measured.
+**Testing status: partially validated.** Measured on 2026-10-02 (below): window
+allocation, 826k + 1.008M needle recall, decode/aggregate throughput at 1-4
+streams, TTFT at 2k/128k, prompt reuse, 2-image vision, GSM8K-250, DFlash2
+acceptance. **Not yet run:** HumanEval, video input, real-photo vision,
+multi-day agentic soak, safety red-team, NVFP4 comparisons.
+
+## Results (2026-10-02, this exact stack, driver 580.178.04)
+
+Policy: numbers without a date are unverified. Decode tok/s are engine deltas
+(reasoning + content) over the decode window; aggregate = completion tokens /
+wall for the batch. Greedy unless noted.
+
+| Metric | Value | Notes |
+|---|---|---|
+| Decode, prose, 1 stream | **63.2 tok/s** | 2k prompt, 512-token reply |
+| Decode, prose, 2 streams | 191.1 tok/s aggregate | 2x512 completion tokens / wall |
+| Decode, prose, 4 streams | **325.1 tok/s aggregate** | 4x512 completion tokens / wall |
+| Decode, structured (JSON), 1 stream | 58.3 tok/s | |
+| Decode, structured (JSON), 4 streams | **375.2 tok/s aggregate** | |
+| TTFT, ~2k prompt | 0.74 s | |
+| TTFT, ~128k prompt | 36.9 s | ~3.5k tok/s prefill |
+| Needle, 826,051-token prompt @87% depth | **retrieved exactly** | first try |
+| Needle, 1,008,051-token prompt @90% depth | **retrieved exactly** | 423.6 s wall (~2.4k tok/s incl. prefill+decode); peak VRAM 92.0 / 90.8 GiB of 95.6 |
+| Prompt reuse, 64,416-token prompt | pass 1: 54.3 s → pass 2: **0.27 s** (~200x) | kept within the window pool even with `TF_GLM_CACHE_GIB=0`; only the most recent conversation's state is kept |
+| Vision, 2-image color ID | pass | correct order + colors |
+| GSM8K, 250-problem test slice, greedy | **97.2% (243/250)**, 220 s | DFlash2 drafting on; Mia's Spark number at 250: 98.0% |
+| DFlash2 draft acceptance | 73.9% (105,304 / 142,458 drafted) | across the whole benchmark session, 563 requests |
+
+Measurement caveats, stated plainly: decode streams counted engine deltas
+(reasoning + content ≈ 1 token each); TTFT is first *token* delta, not first
+byte; the 1.008M needle is a synthetic needle, not an MRCBench-style
+multi-needle suite; GSM8K is a 250-problem slice of the 1,319-problem test set,
+scored by `#### <number>` extraction (one benign parser iteration was needed —
+the first run's 0.0% was a scorer bug comparing against the full gold
+annotation string, retracted).
 
 ## Hardware
 
@@ -125,10 +157,11 @@ The build stamps the patches hash into the image label `tf.patches`;
 
 ## Publishing
 
-`publish-docker.sh` pushes `tensorfold-glm53:v0.6.0-<hash>` and `:latest` to
-Docker Hub (user via `DOCKER_USER` or your existing `docker login`), with OCI
-source/license labels. ~24.5 GB uncompressed; only changed layers upload on
-re-push.
+Image on Docker Hub:
+[satgeze/glm-5.3-flash-exl3-4bpw-tensorfold](https://hub.docker.com/r/satgeze/glm-5.3-flash-exl3-4bpw-tensorfold)
+— `v0.6.0-bc15e54e8ed6` (pinned, 2026-10-02) and `:latest`, 24.5 GB
+uncompressed. `publish-docker.sh` pushes refreshed builds (version-hash + latest
+tags, OCI labels, tf.patches survival check).
 
 ## Credits and licenses
 
