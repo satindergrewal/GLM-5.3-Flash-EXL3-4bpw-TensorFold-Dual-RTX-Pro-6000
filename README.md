@@ -150,25 +150,27 @@ chain, mapped layer by layer on 2026-10-02 (WIP port lives on the fork branch
    dequant through the *linear* kernel matches python exactly — the packing
    difference only bites in the grouped MoE matmul).
 
-   **Measured on the fully-patched serving image (2026-10-02, re-verified
-   after an earlier stale-image false alarm):** the mixed layers decode
-   through `x3experts.routed` and **k3 experts are correct while k4 experts
-   in the same launch produce garbage** (isolated per-expert checks: k3
-   through `x3experts.routed` matches python to fp16 noise; GSM8K-25 0/25
-   with verbatim repetition loops on the full serve). The generic grouped
-   kernel reads per-expert k2 at runtime and its launch ranges cover
-   K2 ∈ [2, 10] — both rates are in range, yet the k2=8 decode corrupts in
-   this kernel while the same bytes decode exactly through the linear
-   dequant kernel and the python MCG unpack. **Remaining work:** a
-   k3-decode-capable grouped kernel (or per-k2 sub-launches splitting each
-   mixed layer's experts), plus per-projection decode groups for the 2,681
-   split-projection experts (full artifact scan: 4,880 pure-k4 / 4,823
-   pure-k3 / 2,681 mixed-projection). That is TensorFold-CUDA-engine work —
-   a fix belongs in this fork's kernel port; the fork branch
-   `mixed-k34` is the base. Until it lands, the 3.5bpw arm under TensorFold
-   produces repetition-salad (measured: GSM8K-25 0/25 on the verified
-   image) and stays off; the 4bpw arm serves the same window with measured
-   97.2% GSM8K.
+   **Status (2026-10-02, latest): the mixed artifact serves coherent text
+   under TensorFold** — the full chain (config parse, family gate, trellis
+   width check, per-expert-width load, per-expert-width decode, per-slot
+   ey write) is fixed on the fork branch `mixed-k34`, and the serve answers
+   with real reasoning content. Accuracy, however, is degraded: GSM8K-25
+   **36% (9/25)** vs **96.89%** for the same artifact on vLLM (same box).
+
+   The MoE decode kernels themselves are verified exact at every geometry
+   (R = 8/128/1024, mixed k3+k4 experts, relative error ≤ 0.04% vs the
+   python MCG reference; k3 and k4 trellises both bit-exact through the
+   dequant kernel). The remaining accuracy gap is in the full-model
+   serving integration — candidates: the per-expert-width decode's
+   interaction with the fp8 KV cache, the DFlash2 verify path on mixed
+   layers, or residual-stream drift across 43 mixed layers. The next
+   diagnostic step is a layer-by-layer activation comparison against the
+   vLLM lane on identical prompts.
+
+   Scope reminder: 2,681 of 12,384 experts are split-projection (different
+   rates per projection) — a complete fix needs per-projection decode
+   groups regardless. The 4bpw arm (all-k4, stacked path) is unaffected
+   and serves the same 1M window at measured 97.2% GSM8K.
 
    Scope note (2026-10-02, full artifact scan): 4,880 experts are pure k4,
    4,823 pure k3, and **2,681 are split-projection** (gate/up/down at
