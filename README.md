@@ -63,6 +63,45 @@ scored by `#### <number>` extraction (one benign parser iteration was needed —
 the first run's 0.0% was a scorer bug comparing against the full gold
 annotation string, retracted).
 
+## Head to head on this box
+
+Same hardware (2x RTX PRO 6000, 192 GB), different engines and quants. Sources:
+vLLM 3.5bpw mixed — companion repo README (1m-multi profile unless noted);
+vLLM K4 4bpw — `v84` release validation on this box (98k context,
+nvfp4_ds_mla KV, DFlash2 mean acceptance 5.74 of 7, no throughput published);
+TensorFold — Results above.
+
+![Max served context](charts/context-by-stack.svg)
+
+| | vLLM K4 4bpw (v84) | vLLM 3.5bpw mixed (1m-multi) | TensorFold 4bpw (this recipe) |
+|---|---|---|---|
+| Max context | 98,304 | 1,000,000 | **1,048,576** |
+| Weights | EXL3 K4 4bpw | EXL3 mixed 3.5bpw | **stock EXL3 TR3 4bpw** |
+| KV cache | nvfp4_ds_mla | fp8_ds_mla / calibrated NVFP4 MLA | fp8 (e4m3 latent + indexer) |
+| Decode single (thinking on) | not published | 143 tok/s | 63.2 tok/s |
+| Aggregate @4 streams | not published | 141.2 tok/s | **325.1 prose / 375.2 JSON** |
+| Prefill | not published | 2,793–2,841 tok/s @500–950K | ~3.5k @128k; ~2.4k effective @1.008M |
+| GSM8K (greedy) | not published | 96.89 | **97.2%** (250-slice) |
+| Images per request | vision smoke pass | 4 | **128** |
+| Drafting | DFlash2, 5.74/7 mean accept | MTP3 (~2.4 mean); DFlash2 3.6–4.2 accept | DFlash2, 73.9% accepted |
+
+![Single-stream decode](charts/decode-single.svg)
+
+![Aggregate decode at 4 streams](charts/decode-concurrency.svg)
+
+![Prefill throughput](charts/prefill.svg)
+
+![GSM8K](charts/gsm8k.svg)
+
+Read plainly, both directions: **vLLM's tuned 3.5bpw lane decodes a single
+stream ~2.3x faster** (143 vs 63.2 tok/s thinking-on — different prompt
+protocols, but the gap is real and its 174–178 tok/s thinking-off single
+widens it), **while TensorFold holds the stock unmodified 4bpw at the full
+native window and wins 4-stream aggregate by ~2.3x** (325 vs 141 tok/s). The
+K4 vLLM validation on this box stopped at 98k context: 4bpw + 1M under vLLM is
+the combination that does not fit, which is the gap this recipe closes by
+switching engines instead of switching quants.
+
 ## Hardware
 
 | | |
@@ -188,6 +227,7 @@ tags, OCI labels, tf.patches survival check).
 
 ```
 patches/            54 unified diffs (upstream stack + v1-models-context)
+charts/             make_charts.py + the 5 SVGs embedded above
 Dockerfile          x86_64 image: NVIDA PyTorch base + TensorFold v0.6.0 + patches
 build-image.sh      hash-stamped image build
 download-dflash2.sh pinned DFlash2 fetch into ./hf
