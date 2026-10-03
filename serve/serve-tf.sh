@@ -18,7 +18,6 @@ done
 unset _env_before
 
 TF_VERSION="${TF_VERSION:-v0.6.0}"
-IMAGE="${IMAGE:-tensorfold-glm53:${TF_VERSION}}"
 
 # --- quant switch: stock 4bpw mirror, or the 3.5bpw mixed encode -------------
 QUANT="${QUANT:-4bpw}"                 # 4bpw | 3.5bpw
@@ -34,11 +33,35 @@ case "$QUANT" in
   3.5bpw)
     [[ -n "$MODEL_DIR_35BPW" ]] || { echo "ERROR: QUANT=3.5bpw needs MODEL_DIR_35BPW"; exit 1; }
     MODEL_DIR="$MODEL_DIR_35BPW"
+    # the mixed arm needs the mixed-k34 image (per-expert-width MoE + the 2026-10-03 pick-stride fix)
+    TF_VERSION="${TF_VERSION:-v0.6.1-mixed-k34}"
     SERVED_NAME="${SERVED_NAME:-GLM-5.3-Flash-EXL3-3.5bpw-mixed}"
     VISION="${VISION:-0}"     # the k35 artifact's chat template has no media branch: text-only under TensorFold
     ;;
   *)
     echo "ERROR: QUANT must be 4bpw or 3.5bpw (got: $QUANT)"; exit 1 ;;
+esac
+
+# --- ABLIT mode (TODO, disabled): abliterated-checkpoint lane ----------------
+# ABLIT=0 (default): serve the checkpoint selected above, untouched.
+# ABLIT=1: serve the abliterated variant of the selected arm - MODEL_DIR_ABLIT_4BPW /
+# MODEL_DIR_ABLIT_35BPW from .env. No abliterated checkpoint is wired yet (see
+# .env.example); until one is validated this fails fast rather than serving silently.
+ABLIT="${ABLIT:-0}"
+case "$ABLIT" in
+  0) ;;
+  1)
+    case "$QUANT" in
+      4bpw)   ABLIT_DIR="${MODEL_DIR_ABLIT_4BPW:-}" ;;
+      3.5bpw) ABLIT_DIR="${MODEL_DIR_ABLIT_35BPW:-}" ;;
+    esac
+    if [[ -z "$ABLIT_DIR" || ! -d "$ABLIT_DIR" ]]; then
+      echo "ERROR: ABLIT=1 needs MODEL_DIR_ABLIT_4BPW or MODEL_DIR_ABLIT_35BPW set to a validated abliterated checkpoint (TODO: not wired yet)"; exit 1
+    fi
+    MODEL_DIR="$ABLIT_DIR"
+    SERVED_NAME="${SERVED_NAME%-ablit}-ablit"
+    ;;
+  *) echo "ERROR: ABLIT must be 0 or 1 (got: $ABLIT)"; exit 1 ;;
 esac
 HF_DIR="${HF_DIR:-$PWD/hf}"
 CACHE_DIR="${CACHE_DIR:-$PWD/cache}"
@@ -51,6 +74,8 @@ MAX_TOKENS="${MAX_TOKENS:-32768}"
 KV="${KV:-fp8}"
 DENSE="${DENSE:-q4}"
 COMM="${COMM:-nccl}"
+IMAGE="${IMAGE:-tensorfold-glm53:${TF_VERSION}}"
+
 MAX_IMAGES="${TENSORFOLD_GLM_MAX_IMAGES:-128}"
 CACHE_GIB="${TF_GLM_CACHE_GIB:-0}"
 RESERVE_GIB="${TENSORFOLD_MEMORY_RESERVE_GIB:-4}"

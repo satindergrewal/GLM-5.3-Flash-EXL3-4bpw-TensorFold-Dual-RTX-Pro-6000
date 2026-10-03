@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the serving image for this recipe: base NVIDIA PyTorch container +
-# TensorFold v0.6.0 (pip, from the upstream git tag) + patches/*.patch.
+# TensorFold v0.6.0 (pip, from this recipe's fork git tag) + patches/*.patch.
 # The patches hash is baked into the image label `tf.patches`; serve scripts
 # and publish-docker.sh read it back from there.
 # Usage: ./build-image.sh [--no-cache]
@@ -8,7 +8,7 @@ set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
 
 TF_VERSION="${TF_VERSION:-v0.6.0}"
-TF_REPO="${TF_REPO:-https://github.com/ashhart/TensorFold.git}"
+TF_REPO="${TF_REPO:-https://github.com/satindergrewal/TensorFold.git}"
 BASE_IMAGE="${BASE_IMAGE:-nvcr.io/nvidia/pytorch:26.07-py3}"
 IMAGE="${IMAGE:-tensorfold-glm53:${TF_VERSION}}"
 IMAGE_EXTRAS="${IMAGE_EXTRAS:-av==18.1.0 xgrammar>=0.2.8,<0.3}"

@@ -19,6 +19,7 @@ plt.style.use("dark_background")
 OUT = os.path.dirname(os.path.abspath(__file__))
 
 C_TF = "#2ecc71"      # TensorFold 4bpw (this recipe)
+C_TF35 = "#e67e22"    # TensorFold 3.5bpw mixed (QUANT=3.5bpw arm)
 C_VLLM = "#3498db"    # vLLM 3.5bpw mixed
 C_K4 = "#9b59b6"      # vLLM K4 4bpw (v84)
 C_REF = "#f1c40f"     # reference (Spark / other)
@@ -40,6 +41,7 @@ stacks = [
     ("vLLM K4 4bpw\n(v84 validation)", 98304, C_K4),
     ("vLLM 3.5bpw\n(vision profile)", 700000, C_VLLM),
     ("vLLM 3.5bpw\n(1m-multi profile)", 1000000, C_VLLM),
+    ("TensorFold 3.5bpw\n(QUANT=3.5bpw)", 983024, C_TF35),
     ("TensorFold 4bpw\n(this recipe)", 1048576, C_TF),
 ]
 labels = [s[0] for s in stacks]
@@ -57,7 +59,7 @@ ax.set_title("Max served context on this box (2x RTX PRO 6000, 192 GB)\n"
              "same checkpoint family, different engines and quants",
              fontsize=12, fontweight="bold", pad=12)
 ax.axhline(1048576, color=C_TF, lw=0.7, ls=":")
-ax.text(3.35, 1055000, "model native window", fontsize=8, color="#aaaaaa")
+ax.text(4.35, 1055000, "model native window", fontsize=8, color="#aaaaaa")
 save(fig, "context-by-stack.svg")
 
 # ---------------------------------------------------------------
@@ -122,14 +124,15 @@ save(fig, "prefill.svg")
 # ---------------------------------------------------------------
 # 5. GSM8K (250-problem test slice where noted)
 # ---------------------------------------------------------------
-fig, ax = plt.subplots(figsize=(10, 5.5))
-names = ["vLLM 3.5bpw\n(this box)", "TensorFold 4bpw\n(this box, greedy)", "TensorFold\n(Spark, Mia 250)"]
-vals = [96.89, 97.2, 98.0]
-cols = [C_VLLM, C_TF, C_REF]
-bars = ax.bar(np.arange(3), vals, 0.5, color=cols)
+fig, ax = plt.subplots(figsize=(11, 5.5))
+names = ["vLLM 3.5bpw\n(this box)", "TensorFold 4bpw\n(this box, greedy)",
+         "TensorFold 3.5bpw\n(this box, greedy)", "TensorFold\n(Spark, Mia 250)"]
+vals = [96.89, 97.2, 98.4, 98.0]
+cols = [C_VLLM, C_TF, C_TF35, C_REF]
+bars = ax.bar(np.arange(4), vals, 0.5, color=cols)
 for xi, v in enumerate(vals):
     ax.text(xi, v + 0.15, f"{v}%", ha="center", fontsize=12, fontweight="bold")
-ax.set_xticks(np.arange(3))
+ax.set_xticks(np.arange(4))
 ax.set_xticklabels(names, fontsize=10)
 ax.set_ylabel("GSM8K accuracy %", fontsize=10)
 ax.set_ylim(90, 100)

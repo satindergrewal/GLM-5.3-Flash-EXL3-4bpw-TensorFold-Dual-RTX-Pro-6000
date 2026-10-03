@@ -53,6 +53,7 @@ wall for the batch. Greedy unless noted.
 | Prompt reuse, 64,416-token prompt | pass 1: 54.3 s → pass 2: **0.27 s** (~200x) | kept within the window pool even with `TF_GLM_CACHE_GIB=0`; only the most recent conversation's state is kept |
 | Vision, 2-image color ID | pass | correct order + colors |
 | GSM8K, 250-problem test slice, greedy | **97.2% (243/250)**, 220 s | DFlash2 drafting on; Mia's Spark number at 250: 98.0% |
+| GSM8K, 250-problem slice, QUANT=3.5bpw arm, greedy (2026-10-03) | **98.4% (246/250)** | post pick-stride fix, image v0.6.1-mixed-k34; 983,024-token window; GSM8K-25 on the same lane: 24/25 |
 | DFlash2 draft acceptance | 73.9% (105,304 / 142,458 drafted) | across the whole benchmark session, 563 requests |
 
 Measurement caveats, stated plainly: decode streams counted engine deltas
@@ -73,17 +74,20 @@ TensorFold — Results above.
 
 ![Max served context](charts/context-by-stack.svg)
 
-| | vLLM K4 4bpw (v84) | vLLM 3.5bpw mixed (1m-multi) | TensorFold 4bpw (this recipe) |
-|---|---|---|---|
-| Max context | 98,304 | 1,000,000 | **1,048,576** |
-| Weights | EXL3 K4 4bpw | EXL3 mixed 3.5bpw | **stock EXL3 TR3 4bpw** |
-| KV cache | nvfp4_ds_mla | fp8_ds_mla / calibrated NVFP4 MLA | fp8 (e4m3 latent + indexer) |
-| Decode single (thinking on) | not published | 143 tok/s | 63.2 tok/s |
-| Aggregate @4 streams | not published | 141.2 tok/s | **325.1 prose / 375.2 JSON** |
-| Prefill | not published | 2,793–2,841 tok/s @500–950K | ~3.5k @128k; ~2.4k effective @1.008M |
-| GSM8K (greedy) | not published | 96.89 | **97.2%** (250-slice) |
-| Images per request | vision smoke pass | 4 | **128** |
-| Drafting | DFlash2, 5.74/7 mean accept | MTP3 (~2.4 mean); DFlash2 3.6–4.2 accept | DFlash2, 73.9% accepted |
+| | vLLM K4 4bpw (v84) | vLLM 3.5bpw mixed (1m-multi) | TensorFold 3.5bpw mixed (QUANT=3.5bpw) | TensorFold 4bpw (this recipe) |
+|---|---|---|---|---|
+| Max context | 98,304 | 1,000,000 | 983,024 (needle-verified at ~912k) | **1,048,576** |
+| Weights | EXL3 K4 4bpw | EXL3 mixed 3.5bpw | EXL3 mixed 3.5bpw | **stock EXL3 TR3 4bpw** |
+| KV cache | nvfp4_ds_mla | fp8_ds_mla / calibrated NVFP4 MLA | fp8 (e4m3 latent + indexer) | fp8 (e4m3 latent + indexer) |
+| Decode single (thinking on) | not published | 143 tok/s | 77.1 tok/s | 63.2 tok/s |
+| Aggregate @4 streams | not published | 141.2 tok/s | 114.2 tok/s prose (early-EOS shortened generations) | **325.1 prose / 375.2 JSON** |
+| Prefill | not published | 2,793–2,841 tok/s @500–950K | ~1.75k tok/s @140k (TTFT 80.3 s) | ~3.5k @128k; ~2.4k effective @1.008M |
+| TTFT, ~2–3k prompt | not published | not comparable | 1.79 s | 0.74 s |
+| Prompt reuse, ~70k prompt | not published | — | 39.7 s cold → **0.13 s warm (~300x)** | 54.3 s → 0.27 s (~200x) |
+| Needle, ~912k-token prompt @90% depth | not published | — | **retrieved exactly**, 23.3 min wall (~650 tok/s effective incl. prefill) | 826k @87% and 1.008M @90%: retrieved exactly |
+| GSM8K (greedy) | not published | 96.89 | **98.4%** (250-slice) | **97.2%** (250-slice) |
+| Images per request | vision smoke pass | 4 | not re-run post-fix | **128** |
+| Drafting | DFlash2, 5.74/7 mean accept | MTP3 (~2.4 mean); DFlash2 3.6–4.2 accept | server default | DFlash2, 73.9% accepted |
 
 ![Single-stream decode](charts/decode-single.svg)
 
@@ -107,93 +111,60 @@ switching engines instead of switching quants.
 `QUANT=4bpw|3.5bpw` in `.env` switches `MODEL_DIR` and the served model id
 (`GLM-5.3-Flash-EXL3-4bpw` / `GLM-5.3-Flash-EXL3-3.5bpw-mixed`). An exported
 `QUANT` from the caller wins over `.env` (precedence-preserving source).
-Everything else — DFlash2, vision, window fit — is quant-agnostic.
+Everything else — DFlash2, vision, window fit — is quant-agnostic. The 3.5bpw
+arm serves from the mixed image `tensorfold-glm53:v0.6.1-mixed-k34` (v0.6.0 +
+the fork's mixed-k34 python stack incl. the 2026-10-03 pick-stride fix); the
+4bpw arm needs no mixed support and runs the base image.
 
-### 3.5bpw under TensorFold: BLOCKED (kernel/ABI port required)
+### 3.5bpw under TensorFold: WORKING (2026-10-03)
 
-The 3.5bpw mixed artifact does **not** boot on TensorFold v0.6.x. The failure
-chain, mapped layer by layer on 2026-10-02 (WIP port lives on the fork branch
-[`mixed-k34`](https://github.com/satindergrewal/TensorFold/tree/mixed-k34)):
+The 3.5bpw mixed artifact boots and scores **98.4% GSM8K-250 (246/250, greedy)** under
+TensorFold — above the same artifact's own vLLM number (96.89%) on the same box and slice.
+It serves a 983,024-token window. The port chain that got here (fork branch
+[`mixed-k34`](https://github.com/satindergrewal/TensorFold/tree/mixed-k34), v0.6.0 + the
+MiaAI-Lab patch stack + the mixed-bits commits):
 
-1. **Config parse** — `"bits": "mixed_k34_per_tensor"` hits
-   `bits=int(quant.get("bits", 4))` (`weights.py:96`). *Fixed on the fork
-   branch* (non-int bits fall back to 4 for geometry; the trellis tensors
-   carry their own widths).
-2. **Family gate** — `glm5_next/__init__.py:50` validates against the uniform
-   `EXL3_VARIANT` and `int()`s the mixed marker. *Fixed on the fork branch*
-   (the mixed k3/k4 variant is accepted: mixed mcg, allowed_bits [3, 4]).
-3. **Trellis width check** — `exl3_mm.py words()` demanded `int16 [..., 64]`.
-   *Relaxed on the fork branch* (3-bit `[..., 48]` accepted; k3 trellises
-   unpack through the same MCG math, which is bits-generic).
-4. **THE REMAINING WALL — trellis packing mismatch in the mixed launch.**
-   `weights.py:378 moe_exl3` stacks per-expert trellises into
-   `[E, K/16, N/16, 32]` int32 (the GLM int32-word packing) and the CUDA
-   decode kernel reads that fixed layout; k3 experts (24-word trellises)
-   cannot stack. The port went deep before stopping — the full chain
-   (config parse, family gate, trellis width check, per-expert-width load
-   through `x3experts.prepare`, decode through `x3experts.routed`) **runs
-   end-to-end on the mixed artifact**, and the isolated decode verdicts are
-   exact and inverted: **k3 trellises decode bit-perfect through the K2=6
-   device path** (GPU kernel vs python MCG unpack: max diff 0.000000 on a
-   48-wide trellis), **while k4 trellises decode to garbage through the
-   K2=8 grouped path on this artifact** (E=2 mixed launch: k3 rows match
-   python to 2.05 max — fp16 noise; k4 rows off by up to 285).
+1. **Config parse** — `"bits": "mixed_k34_per_tensor"` hit
+   `bits=int(quant.get("bits", 4))` (`weights.py:96`). Fixed: non-int bits fall back to 4
+   for geometry; the trellis tensors carry their own widths.
+2. **Family gate** — `glm5_next/__init__.py` validated against the uniform `EXL3_VARIANT`.
+   Fixed: the mixed k3/k4 mcg variant is accepted (allowed_bits [3, 4]).
+3. **Trellis width check** — `exl3_mm.py words()` demanded `int16 [..., 64]`. Relaxed:
+   3-bit `[..., 48]` accepted.
+4. **Per-expert-width MoE** — `moe_exl3` routes the mixed layer through
+   `x3experts.prepare`/`x3experts.routed` (one width per expert, no uniform stack), with the
+   per-slot `[R, top_k, hidden]` ey write (the earlier flat write caused repetition loops).
 
-   Root cause, as measured: the k35 mixed encode stores **all** trellises
-   int16-native (I16 [..., 48] / [..., 64] — the b12x/vLLM packing), while
-   TensorFold's own 4bpw artifacts store trellises as int32 words
-   (I32 [..., 32] — the GLM packing). TensorFold's decode kernels are
-   K2-templated with per-K2 bit-stream layouts: the K2=6 branch happens to
-   match the k35's int16-native k3 packing (never exercised by the 4bpw,
-   which has no k3 experts), and the K2=8 branch matches the GLM int32-word
-   packing but **not** the k35's int16-native k4 packing (the k35's k4
-   dequant through the *linear* kernel matches python exactly — the packing
-   difference only bites in the grouped MoE matmul).
+**The accuracy bug that remained after the port (36% GSM8K-25), found 2026-10-03 — one
+line.** The x3 expert kernels (`group_kernel`, `rot_in_kernel`, `gateup_epilogue_kernel`,
+`down_epilogue_kernel`, `down_combine_kernel` in `tensorfold/cuda/exl3/experts.cu`) index
+the pick tensor with flat `r * slots + s` arithmetic, assuming a contiguous
+`[R, slots=8]` layout. The serving path passes `b.pick[:R]`, which is `[R, top_k + 1]` —
+stride 9, because slot 8 holds the shared expert. From row 1 onward every row's expert
+window was shifted by one position: each token lost its 8th expert, inherited the previous
+row's picks, and wasted a slot on the shared-expert id. Fluent text, degraded reasoning —
+36% GSM8K-25. The fix: `b.pick[:R, :c.top_k].contiguous()` in the mixed branch of
+`forward.py` (image `tensorfold-glm53:v0.6.1-mixed-k34`). GSM8K-25 went **36% → 96% (24/25)**
+on restart, GSM8K-250 **98.4% (246/250)**.
 
-   **Status (2026-10-02, latest): the mixed artifact serves coherent text
-   under TensorFold** — the full chain (config parse, family gate, trellis
-   width check, per-expert-width load, per-expert-width decode, per-slot
-   ey write) is fixed on the fork branch `mixed-k34`, and the serve answers
-   with real reasoning content. Accuracy is degraded: GSM8K-25 **36%
-   (9/25)** with thinking-on (max_tokens 6000) vs **96.89%** for the same
-   artifact on vLLM (same box); **24%** at effort=low; **0%** with
-   --no-thinking (premature EOS mid-reasoning).
+Decode parity, sealed before the routing fix (this is why the quant itself was never
+suspect after 2026-10-03): the sealed pure-torch B12X reader, TensorFold's python MCG
+reference, and TensorFold's CUDA lane decode produce **bit-identical** rotated-domain
+weights on real artifact tensors — both rates, all three projections (both tile geometries),
+max abs diff 0.0; final weights with Hadamard + scales agree to 3e-15 (fp64 noise). The
+mixed encode's mcg codebook (multiplier 0xCBAC1FED), 256-state lane permutation, cyclic
+bit-stream window, and suh/svh scale convention are identical between the B12X/vLLM
+convention and TensorFold's kernels.
 
-   The MoE decode kernels themselves are verified exact at every geometry
-   and every rate (R = 8/128/1024, mixed k3+k4 experts, fp16 and bf16
-   input, relative error ≤ 0.04% vs the python MCG reference; k3 and k4
-   trellises both bit-exact through the dequant kernel). The chat template,
-   the reasoning effort, and the reply budget were all swept with no effect
-   on the score. **The remaining accuracy gap is in the full-model serving
-   integration** — the leading hypothesis: the k3 MCG trellis decode
-   conventions differ between TensorFold's K2=6 lane decode and B12X's
-   vLLM-side decoder for the same int16-native bytes, producing different
-   dequantized values for the k3 experts and degrading the model's
-   reasoning quality through 43 mixed MoE layers. The next diagnostic:
-   decode the same k3 trellis with B12X's decoder and compare the values
-   against TensorFold's, or dump per-layer activations from both engines
-   on identical prompts.
+Artifact fact (drove the per-expert-width design, still true): of 12,384 experts,
+4,880 are pure k4, 4,823 pure k3, and **2,681 are split-projection** (gate/up/down at
+different rates). The x3experts path takes widths per expert-projection tensor natively,
+so no per-rate sub-launching is needed. The 4bpw arm (all-k4, stacked path) is unaffected
+and serves the full 1M window at measured 97.2% GSM8K.
 
-   Scope reminder: 2,681 of 12,384 experts are split-projection (different
-   rates per projection) — a complete fix needs per-projection decode
-   groups regardless. The 4bpw arm (all-k4, stacked path) is unaffected
-   and serves the same 1M window at measured 97.2% GSM8K.
-
-   Scope note (2026-10-02, full artifact scan): 4,880 experts are pure k4,
-   4,823 pure k3, and **2,681 are split-projection** (gate/up/down at
-   different rates). A complete mixed serve therefore needs
-   per-projection-per-rate decode groups (up to 6 sub-launches per layer)
-   plus a k3-capable CUDA trellis decode — an engine-port project measured
-   in days. The fork branch `mixed-k34` carries everything up to this wall:
-   config parse, family gate, trellis width check, per-expert-width load
-   and decode, and the isolation probes (`bench/k3_discriminator.py`,
-   `k3_iso2.py`) that localized the packing mismatch to the byte level.
-
-Status: handled entirely in the fork
-([satindergrewal/TensorFold, branch `mixed-k34`](https://github.com/satindergrewal/TensorFold/tree/mixed-k34) —
-v0.6.0 + the MiaAI-Lab patch stack + the mixed-bits commits). Upstream
-TensorFold 0.6.2 declines mixed-bit rates and ships no logprobs on the
-GLM-5.3 backend; both stay fork-local work.
+Upstream TensorFold 0.6.2 declines mixed-bit rates and ships no logprobs on the
+GLM-5.3 backend; both stay fork-local work
+([satindergrewal/TensorFold, branch `mixed-k34`](https://github.com/satindergrewal/TensorFold/tree/mixed-k34)).
 
 ### Fidelity of the two quants, measured behaviorally
 
@@ -202,14 +173,14 @@ logprobs** (chat completions with `logprobs: true` → 400 "logprobs are not
 supported by this model or backend"), so the teacher-forcing KLD methodology
 has no student-side signal. The behavioral proxy that does work, on this box:
 
-| | TensorFold 4bpw (this recipe) | vLLM 3.5bpw mixed (companion repo, 700k–1M lanes) |
-|---|---|---|
-| GSM8K, greedy | **97.2%** (250-slice) | 96.89% |
+| | TensorFold 4bpw (this recipe) | TensorFold 3.5bpw mixed (QUANT=3.5bpw) | vLLM 3.5bpw mixed (companion repo, 700k–1M lanes) |
+|---|---|---|---|
+| GSM8K, greedy, 250-slice | **97.2%** | **98.4%** | 96.89% |
 
-Same hardware, both with DFlash-family drafting: the 3.5bpw mixed encode is
-behaviorally indistinguishable from stock 4bpw on GSM8K (Δ ≈ 0.3pt, within
-slice noise). That matches the 3.5bpw repo's five-run KLD gate vs teacher
-(mean 0.0246, bar 0.06) measured during its encode.
+Same hardware: the 3.5bpw mixed encode under TensorFold is behaviorally at least the equal
+of stock 4bpw under TensorFold and of itself under vLLM (all within ~1.5pt of slice noise).
+That matches the 3.5bpw repo's five-run KLD gate vs teacher (mean 0.0246, bar 0.06)
+measured during its encode.
 
 ## Hardware
 
