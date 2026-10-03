@@ -17,7 +17,8 @@ for _n in "${!_env_before[@]}"; do
 done
 unset _env_before
 
-TF_VERSION="${TF_VERSION:-v0.6.0}"
+# TF_VERSION is defaulted per quant arm in the case below (the 3.5bpw arm needs
+# the mixed-k34 image; do not pre-set it here or the arm default never applies)
 
 # --- quant switch: stock 4bpw mirror, or the 3.5bpw mixed encode -------------
 QUANT="${QUANT:-4bpw}"                 # 4bpw | 3.5bpw
@@ -27,6 +28,7 @@ case "$QUANT" in
   4bpw)
     [[ -n "$MODEL_DIR_4BPW" ]] || { echo "ERROR: QUANT=4bpw needs MODEL_DIR_4BPW"; exit 1; }
     MODEL_DIR="$MODEL_DIR_4BPW"
+    TF_VERSION="${TF_VERSION:-v0.6.0}"
     SERVED_NAME="${SERVED_NAME:-GLM-5.3-Flash-EXL3-4bpw}"
     VISION="${VISION:-1}"
     ;;
@@ -37,6 +39,9 @@ case "$QUANT" in
     TF_VERSION="${TF_VERSION:-v0.6.1-mixed-k34}"
     SERVED_NAME="${SERVED_NAME:-GLM-5.3-Flash-EXL3-3.5bpw-mixed}"
     VISION="${VISION:-0}"     # the k35 artifact's chat template has no media branch: text-only under TensorFold
+    # the auto-fit stops one 64k block short of native for this arm (983,040); explicit
+    # context serves the full window with ~12.6 GiB/GPU headroom (measured 2026-10-04)
+    CONTEXT="${CONTEXT:-1048576}"
     ;;
   *)
     echo "ERROR: QUANT must be 4bpw or 3.5bpw (got: $QUANT)"; exit 1 ;;

@@ -53,7 +53,7 @@ wall for the batch. Greedy unless noted.
 | Prompt reuse, 64,416-token prompt | pass 1: 54.3 s → pass 2: **0.27 s** (~200x) | kept within the window pool even with `TF_GLM_CACHE_GIB=0`; only the most recent conversation's state is kept |
 | Vision, 2-image color ID | pass | correct order + colors |
 | GSM8K, 250-problem test slice, greedy | **97.2% (243/250)**, 220 s | DFlash2 drafting on; Mia's Spark number at 250: 98.0% |
-| GSM8K, 250-problem slice, QUANT=3.5bpw arm, greedy (2026-10-03) | **98.4% (246/250)** | post pick-stride fix, image v0.6.1-mixed-k34; 983,024-token window; GSM8K-25 on the same lane: 24/25 |
+| GSM8K, 250-problem slice, QUANT=3.5bpw arm, greedy (2026-10-03) | **98.4% (246/250)** | post pick-stride fix, image v0.6.1-mixed-k34; full native window; GSM8K-25 on the same lane: 24/25 |
 | DFlash2 draft acceptance | 73.9% (105,304 / 142,458 drafted) | across the whole benchmark session, 563 requests |
 
 Measurement caveats, stated plainly: decode streams counted engine deltas
@@ -76,7 +76,7 @@ TensorFold — Results above.
 
 | | vLLM K4 4bpw (v84) | vLLM 3.5bpw mixed (1m-multi) | TensorFold 3.5bpw mixed (QUANT=3.5bpw) | TensorFold 4bpw (this recipe) |
 |---|---|---|---|---|
-| Max context | 98,304 | 1,000,000 | 983,024 (needle-verified at ~912k) | **1,048,576** |
+| Max context | 98,304 | 1,000,000 | **1,048,560** (needle-verified at ~912k @90% depth) | **1,048,576** |
 | Weights | EXL3 K4 4bpw | EXL3 mixed 3.5bpw | EXL3 mixed 3.5bpw | **stock EXL3 TR3 4bpw** |
 | KV cache | nvfp4_ds_mla | fp8_ds_mla / calibrated NVFP4 MLA | fp8 (e4m3 latent + indexer) | fp8 (e4m3 latent + indexer) |
 | Decode single (thinking on) | not published | 143 tok/s | 77.1 tok/s | 63.2 tok/s |
@@ -120,7 +120,7 @@ the fork's mixed-k34 python stack incl. the 2026-10-03 pick-stride fix); the
 
 The 3.5bpw mixed artifact boots and scores **98.4% GSM8K-250 (246/250, greedy)** under
 TensorFold — above the same artifact's own vLLM number (96.89%) on the same box and slice.
-It serves a 983,024-token window. The port chain that got here (fork branch
+It serves the **full native window** (1,048,560 context; measured 77.4 of 90.08 GiB/GPU at boot). One quirk: with `CONTEXT=0` (auto-fit) this arm stops one 64k block short (983,040) while the 4bpw arm's auto-fit reaches native, so the recipe pins `CONTEXT=1048576` for the 3.5bpw arm. The port chain that got here (fork branch
 [`mixed-k34`](https://github.com/satindergrewal/TensorFold/tree/mixed-k34), v0.6.0 + the
 MiaAI-Lab patch stack + the mixed-bits commits):
 

@@ -41,7 +41,7 @@ stacks = [
     ("vLLM K4 4bpw\n(v84 validation)", 98304, C_K4),
     ("vLLM 3.5bpw\n(vision profile)", 700000, C_VLLM),
     ("vLLM 3.5bpw\n(1m-multi profile)", 1000000, C_VLLM),
-    ("TensorFold 3.5bpw\n(QUANT=3.5bpw)", 983024, C_TF35),
+    ("TensorFold 3.5bpw\n(QUANT=3.5bpw)", 1048560, C_TF35),
     ("TensorFold 4bpw\n(this recipe)", 1048576, C_TF),
 ]
 labels = [s[0] for s in stacks]
