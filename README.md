@@ -154,18 +154,25 @@ chain, mapped layer by layer on 2026-10-02 (WIP port lives on the fork branch
    under TensorFold** — the full chain (config parse, family gate, trellis
    width check, per-expert-width load, per-expert-width decode, per-slot
    ey write) is fixed on the fork branch `mixed-k34`, and the serve answers
-   with real reasoning content. Accuracy, however, is degraded: GSM8K-25
-   **36% (9/25)** vs **96.89%** for the same artifact on vLLM (same box).
+   with real reasoning content. Accuracy is degraded: GSM8K-25 **36%
+   (9/25)** with thinking-on (max_tokens 6000) vs **96.89%** for the same
+   artifact on vLLM (same box); **24%** at effort=low; **0%** with
+   --no-thinking (premature EOS mid-reasoning).
 
    The MoE decode kernels themselves are verified exact at every geometry
-   (R = 8/128/1024, mixed k3+k4 experts, relative error ≤ 0.04% vs the
-   python MCG reference; k3 and k4 trellises both bit-exact through the
-   dequant kernel). The remaining accuracy gap is in the full-model
-   serving integration — candidates: the per-expert-width decode's
-   interaction with the fp8 KV cache, the DFlash2 verify path on mixed
-   layers, or residual-stream drift across 43 mixed layers. The next
-   diagnostic step is a layer-by-layer activation comparison against the
-   vLLM lane on identical prompts.
+   and every rate (R = 8/128/1024, mixed k3+k4 experts, fp16 and bf16
+   input, relative error ≤ 0.04% vs the python MCG reference; k3 and k4
+   trellises both bit-exact through the dequant kernel). The chat template,
+   the reasoning effort, and the reply budget were all swept with no effect
+   on the score. **The remaining accuracy gap is in the full-model serving
+   integration** — the leading hypothesis: the k3 MCG trellis decode
+   conventions differ between TensorFold's K2=6 lane decode and B12X's
+   vLLM-side decoder for the same int16-native bytes, producing different
+   dequantized values for the k3 experts and degrading the model's
+   reasoning quality through 43 mixed MoE layers. The next diagnostic:
+   decode the same k3 trellis with B12X's decoder and compare the values
+   against TensorFold's, or dump per-layer activations from both engines
+   on identical prompts.
 
    Scope reminder: 2,681 of 12,384 experts are split-projection (different
    rates per projection) — a complete fix needs per-projection decode
