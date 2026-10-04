@@ -65,6 +65,13 @@ a like-for-like re-measure is pending. TTFT at a ~2-3k prompt: 0.74 s (4bpw) / 1
 | ~2-150k tokens | ~3.5k tok/s @128k | **~2.73–2.78k tok/s @166k (TTFT 59.7–60.9 s, lanes + NCCL match)** | 2,793-2,841 tok/s @500-950K |
 | ~1M tokens | 2,379 tok/s effective @1.008M | ~1.67k tok/s effective @912k | not published |
 
+Depth curve, 3.5bpw cold TTFT (unique prompts, no cache hits): 6K 3.1 s / 30K 14.1 s / 60K 25.9 s /
+120K 52.0 s / 166K 59.7–60.9 s — subtracting the ~1.6 s fixed overhead, the marginal prefill rate is
+~2.3–2.8k tok/s at every depth. Two independent engines on this box's mixed GPU pair (this arm and the
+vLLM reference at 2.79–2.84k) converge on the same ceiling, which is the host-transport physics of the
+pair, not an engine limit; published same-card numbers well above it (~8k prefill, ~280 decode) come
+from a W4A16 NVFP4/FP8 mixed quant on matched-SKU pairs where peer DMA and the copy-engine exchange work.
+
 The 3.5bpw arm prefills in 1024-row chunks against the 4bpw path's 2048 (a kernel shared-memory ceiling) —
 but widening the chunk is not the lever: 3072-row chunks boot and leave TTFT unchanged, because the
 routed-MoE span is exchange-wait bound, not kernel bound. The real lever was the NCCL stack. This host's
