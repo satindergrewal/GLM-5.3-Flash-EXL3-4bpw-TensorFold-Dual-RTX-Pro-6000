@@ -40,7 +40,7 @@ batch. Greedy (temperature 0) unless noted. Numbers without a second date are th
 
 | Concurrent requests | TensorFold 4bpw | TensorFold 3.5bpw mixed | vLLM 3.5bpw (reference) |
 | ---: | ---: | ---: | ---: |
-| 1 stream | 63.2 tok/s | 81.0 tok/s | 143 tok/s |
+| 1 stream | 63.2 tok/s | 81.0 tok/s (avx stack, fusions off) | 143 tok/s |
 | 4 streams, prose | 325.1 tok/s | 113.6 tok/s * | 141.2 tok/s |
 | 4 streams, JSON | 375.2 tok/s | not re-run post-fix | not published |
 
@@ -193,7 +193,16 @@ top_k-slot scratch shifts every row's expert window by one position from row 1 o
 was the whole "mixed arm is broken" story: it scored 36% on GSM8K-25 while producing fluent text until the
 one-line contiguous-pick fix took it to 96%, and 98.4% at 250 problems.
 
-**2026-10-04: upstream v0.6.5 merged into the fork** (commit `5cf0b3b` on `mixed-k34`) — the symmetric
+**2026-10-04: upstream v0.6.5 merged into the fork** (`5cf0b3b` on `mixed-k34`), then **Aevonix
+Research's full 32-patch single-host engine series landed** (branch
+[`mixed-k34-avx`](https://github.com/satindergrewal/TensorFold/tree/mixed-k34-avx)): IPC all-gather with
+protocols, the copy-engine exchange, two prefill lanes, launch tables, decode fusions, draft-fast, wide
+windows, expert prompt kernels, prefill-2/3, round-cap two-shot, lane inputs/partials, warm-turn
+incremental and the port series — every patch hand-merged onto this tree with the mixed-rate path
+preserved and re-gated (GSM8K-250 98.4% unchanged on the integrated stack). The fused decode kernels and
+the GPU sampler are **compiled in but default OFF** (`TF_GLM_FUSE=0`, `TENSORFOLD_GPU_SAMPLE=0`): the
+hand-merged kernel sources fail their first-use bit-checks here, and TensorFold's checks catch it —
+serving stays exact while they are off. Earlier state — the symmetric
 two-rank exchange, the generic EXL3 route, API keys and the vLLM-metric mirrors came in; the mixed-rate
 loader, the pick-stride fix and the fp8-KV stack were preserved and re-gated (GSM8K-250 98.4% unchanged;
 the ~912k needle wall dropped 23.3 → 9.1 min). Upstream's own loader still declines mixed-bit markers, so
