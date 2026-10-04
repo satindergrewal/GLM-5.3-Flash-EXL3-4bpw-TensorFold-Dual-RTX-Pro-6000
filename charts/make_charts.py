@@ -65,15 +65,15 @@ save(fig, "context-by-stack.svg")
 # ---------------------------------------------------------------
 # 2. Single-stream decode, thinking on
 # ---------------------------------------------------------------
-fig, ax = plt.subplots(figsize=(10, 5.5))
-names = ["TensorFold 4bpw\n(this recipe)", "vLLM 3.5bpw\n(1m-multi profile)"]
-vals = [63.2, 143.0]
-notes = ["thinking-on, 2k prompt, 200 deltas", "thinking-on, warm, forced-gen protocol"]
-bars = ax.bar(np.arange(2), vals, 0.5, color=[C_TF, C_VLLM])
+fig, ax = plt.subplots(figsize=(11, 5.5))
+names = ["TensorFold 4bpw\n(this recipe)", "TensorFold 3.5bpw\n(QUANT=3.5bpw)", "vLLM 3.5bpw\n(1m-multi profile)"]
+vals = [63.2, 77.1, 143.0]
+notes = ["thinking-on, 2k prompt, 200 deltas", "thinking-on, ~3k prompt", "thinking-on, warm, forced-gen protocol"]
+bars = ax.bar(np.arange(3), vals, 0.5, color=[C_TF, C_TF35, C_VLLM])
 for xi, (v, n) in enumerate(zip(vals, notes)):
     ax.text(xi, v + 3, f"{v} tok/s", ha="center", fontsize=12, fontweight="bold")
     ax.text(xi, v / 2, n, ha="center", fontsize=9, color="#111111")
-ax.set_xticks(np.arange(2))
+ax.set_xticks(np.arange(3))
 ax.set_xticklabels(names, fontsize=10)
 ax.set_ylabel("Decode tok/s (engine deltas)", fontsize=10)
 ax.set_ylim(0, 165)
@@ -85,40 +85,40 @@ save(fig, "decode-single.svg")
 # ---------------------------------------------------------------
 # 3. Aggregate decode at 4 concurrent streams
 # ---------------------------------------------------------------
-fig, ax = plt.subplots(figsize=(11, 5.5))
-names = ["TensorFold 4bpw\nprose @4", "TensorFold 4bpw\nJSON @4", "vLLM 3.5bpw\n(1m-multi) @4"]
-vals = [325.1, 375.2, 141.2]
-cols = [C_TF, C_TF, C_VLLM]
-bars = ax.bar(np.arange(3), vals, 0.55, color=cols)
+fig, ax = plt.subplots(figsize=(12, 5.5))
+names = ["TensorFold 4bpw\nprose @4", "TensorFold 4bpw\nJSON @4", "TensorFold 3.5bpw\nprose @4*", "vLLM 3.5bpw\n(1m-multi) @4"]
+vals = [325.1, 375.2, 114.2, 141.2]
+cols = [C_TF, C_TF, C_TF35, C_VLLM]
+bars = ax.bar(np.arange(4), vals, 0.55, color=cols)
 for xi, v in enumerate(vals):
     ax.text(xi, v + 6, f"{v} tok/s", ha="center", fontsize=12, fontweight="bold")
-ax.set_xticks(np.arange(3))
+ax.set_xticks(np.arange(4))
 ax.set_xticklabels(names, fontsize=10)
 ax.set_ylabel("Aggregate decode tok/s", fontsize=10)
 ax.set_ylim(0, 430)
 ax.set_title("Aggregate decode, 4 concurrent streams\n"
-             "TensorFold: completion tokens / wall; vLLM: 1m-multi README aggregate @4 (141.2)",
-             fontsize=12, fontweight="bold", pad=12)
+             "TensorFold: completion tokens / wall; vLLM: 1m-multi README aggregate @4 (141.2). "
+             "* 3.5bpw run used a shorter-generation protocol - re-measure pending", fontsize=12, fontweight="bold", pad=12)
 save(fig, "decode-concurrency.svg")
 
 # ---------------------------------------------------------------
 # 4. Prefill throughput
 # ---------------------------------------------------------------
-fig, ax = plt.subplots(figsize=(12, 5.5))
+fig, ax = plt.subplots(figsize=(13, 5.5))
 names = ["vLLM 3.5bpw\n@500K", "vLLM 3.5bpw\n@750K", "vLLM 3.5bpw\n@950K",
-         "TensorFold 4bpw\n@128k", "TensorFold 4bpw\n@1.008M"]
-vals = [2836.7, 2840.6, 2793.2, 3470.0, 2379.0]
-cols = [C_VLLM] * 3 + [C_TF] * 2
-bars = ax.bar(np.arange(5), vals, 0.6, color=cols)
+         "TensorFold 4bpw\n@128k", "TensorFold 4bpw\n@1.008M", "TensorFold 3.5bpw\n@140k"]
+vals = [2836.7, 2840.6, 2793.2, 3470.0, 2379.0, 1750.0]
+cols = [C_VLLM] * 3 + [C_TF] * 2 + [C_TF35]
+bars = ax.bar(np.arange(6), vals, 0.6, color=cols)
 for xi, v in enumerate(vals):
     ax.text(xi, v + 40, f"{v:,.0f}", ha="center", fontsize=10, fontweight="bold")
-ax.set_xticks(np.arange(5))
-ax.set_xticklabels(names, fontsize=10)
+ax.set_xticks(np.arange(6))
+ax.set_xticklabels(names, fontsize=9)
 ax.set_ylabel("Prefill tok/s", fontsize=10)
 ax.set_ylim(0, 3900)
 ax.set_title("Prefill throughput\n"
-             "vLLM: stream-TTFT at depth (README); TensorFold: TTFT-derived @128k, needle wall-derived @1.008M (methods differ)",
-             fontsize=12, fontweight="bold", pad=12)
+             "vLLM: stream-TTFT at depth (README); TensorFold: TTFT-derived @128k, needle wall-derived @1.008M; "
+             "3.5bpw runs 1024-row prefill chunks vs 2048 (fork kernel fix pending)", fontsize=12, fontweight="bold", pad=12)
 save(fig, "prefill.svg")
 
 # ---------------------------------------------------------------

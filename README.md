@@ -1,37 +1,47 @@
-# GLM-5.3-Flash EXL3 4bpw (stock) - TensorFold v0.6 - Dual RTX Pro 6000
+# GLM-5.3-Flash EXL3 - TensorFold v0.6 - Dual RTX Pro 6000 (4bpw stock + 3.5bpw mixed)
 
-Stock-quantization GLM-5.3-Flash on 2x RTX PRO 6000 (SM120, 96 GB each), single
-box: **the full 1,048,576-token native window + 4 concurrent streams + vision +
-DFlash2 speculative decoding, at the unmodified 4bpw checkpoint.**
+GLM-5.3-Flash on 2x RTX PRO 6000 (SM120, 96 GB each), single box, **two switchable
+arms** (`QUANT=4bpw|3.5bpw`): the unmodified stock TR3-4bpw checkpoint, or the
+MiaAi-Lab k3/k4 per-tensor mixed 3.5bpw encode — both with the full ~1M native
+window, concurrent streams, vision, and DFlash2 speculative decoding.
 
-No custom quant. No per-layer mixing. This is GLM-5.3-Flash EXL3 TR3-4bpw —
-quantized by MiaAi-Lab
+The 4bpw arm is GLM-5.3-Flash EXL3 TR3-4bpw — quantized by MiaAi-Lab
 ([Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw](https://huggingface.co/Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw),
 served from the byte-identical
 [brandonmusic/GLM-5.3-Flash-tr3-4bpw](https://huggingface.co/brandonmusic/GLM-5.3-Flash-tr3-4bpw)
-mirror) — running on [TensorFold](https://github.com/ashhart/TensorFold) v0.6 in
+mirror). The 3.5bpw arm is the companion
+[k35 mixed encode](https://github.com/satindergrewal/GLM-5.3-Flash-EXL3-3.5bpw-Mixed-SM120-TP2)'s
+artifact. Both run on [TensorFold](https://github.com/ashhart/TensorFold) v0.6 in
 `COMM=nccl` mode — the first (to our knowledge) published TensorFold recipe for
 x86_64 discrete GPUs. The same 192 GB that needs a 3.5bpw mixed encode under
-vLLM (see the companion repo
-[GLM-5.3-Flash-EXL3-3.5bpw-Mixed-SM120-TP2](https://github.com/satindergrewal/GLM-5.3-Flash-EXL3-3.5bpw-Mixed-SM120-TP2))
-holds stock 4bpw + 1M window here, because TensorFold's runtime carries no
-vLLM-style context-proportional workspace and repacks dense weights to q4.
+vLLM holds stock 4bpw + the full 1M window here, because TensorFold's runtime
+carries no vLLM-style context-proportional workspace and repacks dense weights
+to q4. Mixed-rate experts (k3/k4 per tensor) ride the fork's per-expert-width
+path; stock 4bpw keeps the stacked fast path.
 
-## Validated (2026-10-02, this exact stack)
+## Validated
 
 | Check | Result |
 |---|---|
-| Window allocated | 1,048,576 tokens, both ranks (88.09 / 86.29 GiB within 90.08 GiB budgets) |
-| Long-context recall | 826,051-token prompt, needle at 87% depth: **retrieved exactly**, DFlash2 drafting on |
+| Window allocated (4bpw, 2026-10-02) | 1,048,576 tokens, both ranks (88.09 / 86.29 GiB within 90.08 GiB budgets) |
+| Window allocated (3.5bpw, 2026-10-04) | 1,048,560 context served (`CONTEXT=1048576`), 77.4 / 79.2 GiB (vision on) — ~12.6 GiB spare |
+| Long-context recall (4bpw) | 826,051-token prompt @87% and 1.008M @90%: **retrieved exactly** |
+| Long-context recall (3.5bpw, 2026-10-04) | ~912k-token prompt @90% depth: **retrieved exactly** |
 | Health/geometry | rank 0 + rank 1 ready in ~209 s (warm caches); API healthy |
-| Vision | tower loaded; image cap raised to 128/request (see patches) |
+| Vision (4bpw) | tower loaded; image cap raised to 128/request (see patches) |
+| Vision (3.5bpw, 2026-10-04) | **pass**: 3-image color ID at the 1M window; artifact ships the 4bpw chat template for TF's `--vision` |
 | `/v1/models` | vLLM-compatible shape incl. `max_model_len` (recipe patch 0053-v1-models-context) |
+| GSM8K accuracy | 4bpw 97.2%, 3.5bpw **98.4%** (250-problem slices, greedy — Results below) |
+| Routing correctness | the 2026-10-03 pick-stride fix (fork) — before it the mixed arm scored 36%; see the 3.5bpw section |
 
-**Testing status: partially validated.** Measured on 2026-10-02 (below): window
-allocation, 826k + 1.008M needle recall, decode/aggregate throughput at 1-4
-streams, TTFT at 2k/128k, prompt reuse, 2-image vision, GSM8K-250, DFlash2
-acceptance. **Not yet run:** HumanEval, video input, real-photo vision,
-multi-day agentic soak, safety red-team, NVFP4 comparisons.
+**Testing status: partially validated.** Measured: window allocation on both
+arms, needle recall to ~1M (4bpw) and ~912k (3.5bpw), decode/aggregate throughput
+at 1-4 streams, TTFT at 2k/128k, prompt reuse, vision (2-image 4bpw, 3-image
+3.5bpw), GSM8K-250 both arms, DFlash2 acceptance. **Not yet run:** HumanEval,
+video input, real-photo vision, 128-image stress on the 3.5bpw arm, multi-day
+agentic soak, safety red-team, NVFP4 comparisons, and a like-for-like re-measure
+of the 3.5bpw aggregate (its current number used a shorter-generation protocol
+than the 4bpw's — noted in the table).
 
 ## Results (2026-10-02, this exact stack, driver 580.178.04)
 
