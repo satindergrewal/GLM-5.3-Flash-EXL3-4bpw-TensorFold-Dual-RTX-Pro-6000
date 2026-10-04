@@ -47,6 +47,10 @@ case "$QUANT" in
     # the auto-fit stops one 64k block short of native for this arm (983,040); explicit
     # context serves the full window with ~12.6 GiB/GPU headroom (measured 2026-10-04)
     CONTEXT="${CONTEXT:-1048576}"
+    # all published 3.5bpw prefill numbers (TTFT 59.7-60.9 s @166k, the depth curve) were
+    # measured with two prefill lanes; default it on for this arm (the 4bpw arm's numbers
+    # predate lanes and keeps the global default)
+    export TF_GLM_PREFILL_LANES="${TF_GLM_PREFILL_LANES:-2}"
     ;;
   *)
     echo "ERROR: QUANT must be 4bpw or 3.5bpw (got: $QUANT)"; exit 1 ;;
