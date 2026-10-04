@@ -40,7 +40,7 @@ batch. Greedy (temperature 0) unless noted. Numbers without a second date are th
 
 | Concurrent requests | TensorFold 4bpw | TensorFold 3.5bpw mixed | vLLM 3.5bpw (reference) |
 | ---: | ---: | ---: | ---: |
-| 1 stream | 63.2 tok/s | **166.4 prose / 208.3 JSON** (release config) | 143 tok/s |
+| 1 stream | 63.2 tok/s | **169.6 prose / 211–257 JSON** (release + lanes) | 143 tok/s |
 | 4 streams, prose | 325.1 tok/s | **308–360 tok/s** (release config) | 141.2 tok/s |
 | 4 streams, JSON | 375.2 tok/s | not re-run post-fix | not published |
 
@@ -55,7 +55,7 @@ a like-for-like re-measure is pending. TTFT at a ~2-3k prompt: 0.74 s (4bpw) / 1
 
 | Prompt | TensorFold 4bpw | TensorFold 3.5bpw mixed | vLLM 3.5bpw (reference) |
 | --- | ---: | ---: | ---: |
-| ~2-150k tokens | ~3.5k tok/s @128k | ~2.1k tok/s @166k (TTFT 78.3 s, speed config) | 2,793-2,841 tok/s @500-950K |
+| ~2-150k tokens | ~3.5k tok/s @128k | **~2.6–2.65k tok/s @166k (TTFT 62.6–63.5 s, lanes)** | 2,793-2,841 tok/s @500-950K |
 | ~1M tokens | 2,379 tok/s effective @1.008M | ~1.67k tok/s effective @912k | not published |
 
 The 3.5bpw arm prefills in 1024-row chunks against the 4bpw path's 2048 (a kernel shared-memory ceiling);
