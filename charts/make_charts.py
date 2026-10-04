@@ -135,7 +135,7 @@ save(fig, "decode-concurrency.svg")
 fig, ax = plt.subplots(figsize=(13.5, 6.2))
 names = ["vLLM 3.5bpw\n@500K", "vLLM 3.5bpw\n@750K", "vLLM 3.5bpw\n@950K",
          "TensorFold 4bpw\n@128k", "TensorFold 4bpw\n@1.008M", "TensorFold 3.5bpw\n@166k *"]
-vals = [2836.7, 2840.6, 2793.2, 3470.0, 2379.0, 2650.0]
+vals = [2836.7, 2840.6, 2793.2, 3470.0, 2379.0, 2755.0]
 bars = ax.bar(np.arange(6), vals, 0.6, color=[C_VLLM] * 3 + [C_TF] * 2 + [C_TF35])
 for b, v in zip(bars, vals):
     ax.text(b.get_x() + b.get_width() / 2, v + 55, f"{v:,.0f}", ha="center", fontsize=14, fontweight="bold")
@@ -144,7 +144,7 @@ ax.set_xticklabels(names)
 ax.set_ylim(0, 3950)
 ax.set_yticks(np.arange(0, 3501, 1000))
 style(ax, "Prefill throughput", "tok/s",
-      "TTFT-derived; 3.5bpw @166k: two prefill lanes on, 62.6-63.5 s cold TTFT (copy-engine exchange is blocked on this box's mixed GPU pair)")
+      "TTFT-derived; 3.5bpw @166k: lanes + NCCL stack matched to the vLLM recipes, 59.7-60.9 s cold TTFT (peer DMA silently drops data on this box's mixed GPU pair, so all engines ride host transports)")
 save(fig, "prefill.svg")
 
 # ---------------------------------------------------------------

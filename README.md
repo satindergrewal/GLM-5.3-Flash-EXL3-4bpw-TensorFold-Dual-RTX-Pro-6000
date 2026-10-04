@@ -34,7 +34,8 @@ per arm starts it.
 Two RTX PRO 6000 Blackwell 96 GB GPUs at stock clocks, one host, driver 580.178.04. Decode tok/s are engine
 deltas (reasoning + content) over the decode window; aggregate is completion tokens divided by wall time for the
 batch. Greedy (temperature 0) unless noted. Numbers without a second date are the 2026-10-02 (4bpw),
-2026-10-04 (3.5bpw, TensorFold 0.6.5 merge) and 2026-10-05 (3.5bpw, prefill lanes) measurements below;
+2026-10-04 (3.5bpw, TensorFold 0.6.5 merge) and 2026-10-05 (3.5bpw, prefill lanes + NCCL stack match)
+measurements below;
 the two arms' protocols differ where noted.
 
 **Decode** (single stream and 4 concurrent streams; thinking on)
@@ -47,7 +48,8 @@ the two arms' protocols differ where noted.
 
 Head-to-head, 3.5bpw mixed on TensorFold versus the same-box vLLM 3.5bpw reference: **aggregate 2.2–2.5x**,
 JSON single-stream up to **1.8x**, prose single-stream **1.19x**, GSM8K-250 **98.4% vs 96.89%**, served window
-**1,048,560 vs 983,024** — the one axis under vLLM is prefill at **0.94x**, hardware-gated as described below.
+**1,048,560 vs 983,024** — the one axis under vLLM is prefill at **0.97–0.98x** (0.94x before the NCCL stack
+match; see below).
 
 \* the 3.5bpw 4-stream run used a shorter-generation protocol than the 4bpw's (early end-of-sequence);
 a like-for-like re-measure is pending. TTFT at a ~2-3k prompt: 0.74 s (4bpw) / 1.61 s (3.5bpw, post-lanes).
@@ -60,17 +62,23 @@ a like-for-like re-measure is pending. TTFT at a ~2-3k prompt: 0.74 s (4bpw) / 1
 
 | Prompt | TensorFold 4bpw | TensorFold 3.5bpw mixed | vLLM 3.5bpw (reference) |
 | --- | ---: | ---: | ---: |
-| ~2-150k tokens | ~3.5k tok/s @128k | **~2.6–2.65k tok/s @166k (TTFT 62.6–63.5 s, lanes)** | 2,793-2,841 tok/s @500-950K |
+| ~2-150k tokens | ~3.5k tok/s @128k | **~2.73–2.78k tok/s @166k (TTFT 59.7–60.9 s, lanes + NCCL match)** | 2,793-2,841 tok/s @500-950K |
 | ~1M tokens | 2,379 tok/s effective @1.008M | ~1.67k tok/s effective @912k | not published |
 
 The 3.5bpw arm prefills in 1024-row chunks against the 4bpw path's 2048 (a kernel shared-memory ceiling) —
 but widening the chunk is not the lever: 3072-row chunks boot and leave TTFT unchanged, because the
-routed-MoE span is exchange-wait bound, not kernel bound. The remaining ~6% to vLLM's prefill rate is
-hardware-gated: CUDA IPC (`cudaIpcOpenMemHandle`) fails across this host's mixed Workstation + Max-Q GPU
-pair with `cudaErrorInvalidValue` (verified by an instrumented two-process probe, lazy and non-lazy both),
-so the copy-engine exchange that would hide those waits stays off (NCCL P2P hangs this pair's boot). A
-daily watchdog on the serve host re-probes IPC on every driver change and enables the exchange
-automatically if a driver ever unlocks it (gate: GSM8K-25 at 24/25, then TTFT@166k against <= ~59 s).
+routed-MoE span is exchange-wait bound, not kernel bound. The real lever was the NCCL stack. This host's
+mixed Workstation + Max-Q pair silently drops peer DMA at the CUDA runtime level — `cudaMemcpyPeerAsync`
+returns success and delivers zero bytes (verified by a runtime-level probe), IPC handles fail loudly with
+`cudaErrorInvalidValue`, and NCCL P2P hangs boot — so every engine on this host, the vLLM reference serves
+included, runs NCCL pinned to host transports (`NCCL_P2P_DISABLE=1`). The 3.5bpw lane was riding the
+torch-bundled stock NCCL 2.30.7; matching what the vLLM recipes actually run — the patched NCCL 2.31.2
+build they `LD_PRELOAD`, plus `NCCL_P2P_LEVEL=4`, `NCCL_PROTO=LL,LL128,Simple`, `NCCL_CUMEM_ENABLE=0` —
+took cold TTFT@166k from 62.6–63.5 s to 59.7–60.9 s (best run 59.68 s; GSM8K-25 gate 24/25 unchanged,
+TTFT@3k 1.6–1.7 s unchanged). Swapping the net plugin, the all-gather exchange mode, and SHM CPU-proxy
+signaling each measured no further change. The remaining ~2–3% is engine-architecture, not driver-gated;
+the daily IPC watchdog stays armed anyway, and if a driver ever repairs peer DMA the copy-engine exchange
+can be gated on top (GSM8K-25 at 24/25, then TTFT@166k against <= ~59 s).
 
 ![Prefill throughput](charts/prefill.svg)
 

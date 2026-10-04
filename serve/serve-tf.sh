@@ -86,6 +86,26 @@ DENSE="${DENSE:-q4}"
 COMM="${COMM:-nccl}"
 IMAGE="${IMAGE:-tensorfold-glm53:${TF_VERSION}}"
 
+# --- NCCL stack match (measured 2026-10-05: cold TTFT@166k 62.6-63.5 s -> 59.7-60.9 s) ---
+# The same-box vLLM recipes LD_PRELOAD a patched NCCL 2.31.2 (/opt/local-inference in
+# their image); this image bundles stock 2.30.7. On a mixed GPU pair where peer DMA
+# silently drops data, everyone rides NCCL host transports - and the patched 2.31.2 +
+# transport env is measurably faster for the prefill exchange. Populate ./nccl-matched
+# with the lib dir (docker create glm53-exl3:dflash2-mixed; docker cp CID:/opt/
+# local-inference/nccl/lib ./nccl-matched) to serve with it; a missing dir serves
+# the stock stack unchanged.
+NCCL_LIB_DIR="${NCCL_LIB_DIR:-$PWD/nccl-matched}"
+NCCL_EXTRA=()
+_nccl_lib="$(ls "$NCCL_LIB_DIR"/libnccl.so.2.* 2>/dev/null | sort -V | tail -1 || true)"
+if [[ -n "$_nccl_lib" ]]; then
+  NCCL_EXTRA+=(-v "$NCCL_LIB_DIR:/opt/nccl-matched:ro"
+               -e LD_PRELOAD=/opt/nccl-matched/"$(basename "$_nccl_lib")"
+               -e NCCL_P2P_LEVEL=4 -e NCCL_PROTO=LL,LL128,Simple -e NCCL_CUMEM_ENABLE=0)
+  echo "[tf] NCCL stack match: $(basename "$_nccl_lib") + transport env"
+else
+  echo "[tf] note: no $NCCL_LIB_DIR/libnccl.so.2.* - serving stock NCCL (prefill ~5% slower; see README)"
+fi
+
 MAX_IMAGES="${TENSORFOLD_GLM_MAX_IMAGES:-128}"
 CACHE_GIB="${TF_GLM_CACHE_GIB:-0}"
 RESERVE_GIB="${TENSORFOLD_MEMORY_RESERVE_GIB:-4}"
@@ -106,6 +126,7 @@ docker run -d --name "$NAME" --gpus all \
   -v "$HF_DIR:/root/.cache/huggingface:ro" \
   -v "$CACHE_DIR:/cache" \
   -v "$PWD/serve/start-ranks.sh:/workspace/start-ranks.sh:ro" \
+  "${NCCL_EXTRA[@]}" \
   -e HF_HUB_OFFLINE=1 \
   -e TF_GLM_KV="$KV" -e TF_GLM_DENSE="$DENSE" -e TF_GLM_COMM="$COMM" \
   -e TENSORFOLD_GLM_MAX_IMAGES="$MAX_IMAGES" -e VISION="$VISION" \
