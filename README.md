@@ -40,8 +40,8 @@ batch. Greedy (temperature 0) unless noted. Numbers without a second date are th
 
 | Concurrent requests | TensorFold 4bpw | TensorFold 3.5bpw mixed | vLLM 3.5bpw (reference) |
 | ---: | ---: | ---: | ---: |
-| 1 stream | 63.2 tok/s | 81.0 tok/s (avx stack, fusions off) | 143 tok/s |
-| 4 streams, prose | 325.1 tok/s | 113.6 tok/s * | 141.2 tok/s |
+| 1 stream | 63.2 tok/s | **96.4–96.8 tok/s** (speed config) | 143 tok/s |
+| 4 streams, prose | 325.1 tok/s | **205–207 tok/s** (speed config) | 141.2 tok/s |
 | 4 streams, JSON | 375.2 tok/s | not re-run post-fix | not published |
 
 \* the 3.5bpw 4-stream run used a shorter-generation protocol than the 4bpw's (early end-of-sequence);
