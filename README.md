@@ -44,6 +44,10 @@ batch. Greedy (temperature 0) unless noted. Numbers without a second date are th
 | 4 streams, prose | 325.1 tok/s | **308–360 tok/s** (release config) | 141.2 tok/s |
 | 4 streams, JSON | 375.2 tok/s | not re-run post-fix | not published |
 
+Head-to-head, 3.5bpw mixed on TensorFold versus the same-box vLLM 3.5bpw reference: **aggregate 2.2–2.5x**,
+JSON single-stream up to **1.8x**, prose single-stream **1.19x**, GSM8K-250 **98.4% vs 96.89%**, served window
+**1,048,560 vs 983,024** — the one axis under vLLM is prefill at **0.94x**, hardware-gated as described below.
+
 \* the 3.5bpw 4-stream run used a shorter-generation protocol than the 4bpw's (early end-of-sequence);
 a like-for-like re-measure is pending. TTFT at a ~2-3k prompt: 0.74 s (4bpw) / 1.78 s (3.5bpw).
 
@@ -58,8 +62,14 @@ a like-for-like re-measure is pending. TTFT at a ~2-3k prompt: 0.74 s (4bpw) / 1
 | ~2-150k tokens | ~3.5k tok/s @128k | **~2.6–2.65k tok/s @166k (TTFT 62.6–63.5 s, lanes)** | 2,793-2,841 tok/s @500-950K |
 | ~1M tokens | 2,379 tok/s effective @1.008M | ~1.67k tok/s effective @912k | not published |
 
-The 3.5bpw arm prefills in 1024-row chunks against the 4bpw path's 2048 (a kernel shared-memory ceiling);
-restoring the 2048-row chunks through the per-expert-width path is the known next lever.
+The 3.5bpw arm prefills in 1024-row chunks against the 4bpw path's 2048 (a kernel shared-memory ceiling) —
+but widening the chunk is not the lever: 3072-row chunks boot and leave TTFT unchanged, because the
+routed-MoE span is exchange-wait bound, not kernel bound. The remaining ~6% to vLLM's prefill rate is
+hardware-gated: CUDA IPC (`cudaIpcOpenMemHandle`) fails across this host's mixed Workstation + Max-Q GPU
+pair with `cudaErrorInvalidValue` (verified by an instrumented two-process probe, lazy and non-lazy both),
+so the copy-engine exchange that would hide those waits stays off (NCCL P2P hangs this pair's boot). A
+daily watchdog on the serve host re-probes IPC on every driver change and enables the exchange
+automatically if a driver ever unlocks it (gate: GSM8K-25 at 24/25, then TTFT@166k against <= ~59 s).
 
 ![Prefill throughput](charts/prefill.svg)
 
@@ -199,10 +209,11 @@ Research's full 32-patch single-host engine series landed** (branch
 protocols, the copy-engine exchange, two prefill lanes, launch tables, decode fusions, draft-fast, wide
 windows, expert prompt kernels, prefill-2/3, round-cap two-shot, lane inputs/partials, warm-turn
 incremental and the port series — every patch hand-merged onto this tree with the mixed-rate path
-preserved and re-gated (GSM8K-250 98.4% unchanged on the integrated stack). The fused decode kernels and
-the GPU sampler are **compiled in but default OFF** (`TF_GLM_FUSE=0`, `TENSORFOLD_GPU_SAMPLE=0`): the
-hand-merged kernel sources fail their first-use bit-checks here, and TensorFold's checks catch it —
-serving stays exact while they are off. Earlier state — the symmetric
+preserved and re-gated (GSM8K-250 98.4% unchanged on the integrated stack). The first hand-merge of the
+fused kernels failed TensorFold's first-use bit-checks; rebuilding those files from Aevonix's reference
+tree fixed that, and the **release engine preset now ships as the launcher defaults** (`TF_GLM_FUSE=all`,
+packed multi-sampler, draft-fast, chunked KDA, sparse/top-k fast paths, prefill lanes) — that preset is
+what the decode table's "release config" rows run. Earlier state — the symmetric
 two-rank exchange, the generic EXL3 route, API keys and the vLLM-metric mirrors came in; the mixed-rate
 loader, the pick-stride fix and the fp8-KV stack were preserved and re-gated (GSM8K-250 98.4% unchanged;
 the ~912k needle wall dropped 23.3 → 9.1 min). Upstream's own loader still declines mixed-bit markers, so
