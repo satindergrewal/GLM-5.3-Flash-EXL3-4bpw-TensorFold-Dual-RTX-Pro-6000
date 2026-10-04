@@ -105,8 +105,8 @@ for b, v in zip(bars, vals):
     ax.text(b.get_x() + b.get_width() / 2, v + 3.5, f"{v} tok/s", ha="center", fontsize=15, fontweight="bold")
 ax.set_xticks(np.arange(3))
 ax.set_xticklabels(names)
-ax.set_ylim(0, 168)
-ax.set_yticks(np.arange(0, 161, 40))
+ax.set_ylim(0, 200)
+ax.set_yticks(np.arange(0, 201, 50))
 style(ax, "Single-stream decode, thinking on", "tok/s (engine deltas)",
       "release engine config (DRAFT_FAST=all, FUSE=all, packed sampler); vLLM 1m-multi README")
 save(fig, "decode-single.svg")
