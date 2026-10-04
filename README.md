@@ -55,7 +55,7 @@ a like-for-like re-measure is pending. TTFT at a ~2-3k prompt: 0.74 s (4bpw) / 1
 
 | Prompt | TensorFold 4bpw | TensorFold 3.5bpw mixed | vLLM 3.5bpw (reference) |
 | --- | ---: | ---: | ---: |
-| ~2-150k tokens | ~3.5k tok/s @128k | ~1.9k tok/s @~150k (TTFT 80.7 s) | 2,793-2,841 tok/s @500-950K |
+| ~2-150k tokens | ~3.5k tok/s @128k | ~2.1k tok/s @166k (TTFT 78.3 s, speed config) | 2,793-2,841 tok/s @500-950K |
 | ~1M tokens | 2,379 tok/s effective @1.008M | ~1.67k tok/s effective @912k | not published |
 
 The 3.5bpw arm prefills in 1024-row chunks against the 4bpw path's 2048 (a kernel shared-memory ceiling);
