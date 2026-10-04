@@ -99,7 +99,7 @@ save(fig, "context-by-stack.svg")
 # ---------------------------------------------------------------
 fig, ax = plt.subplots(figsize=(11, 6.2))
 names = ["TensorFold 4bpw", "TensorFold 3.5bpw\n(mixed)", "vLLM 3.5bpw\n(1m-multi)"]
-vals = [63.2, 77.1, 143.0]
+vals = [63.2, 81.0, 143.0]
 bars = ax.bar(np.arange(3), vals, 0.5, color=[C_TF, C_TF35, C_VLLM])
 for b, v in zip(bars, vals):
     ax.text(b.get_x() + b.get_width() / 2, v + 3.5, f"{v} tok/s", ha="center", fontsize=15, fontweight="bold")
@@ -116,7 +116,7 @@ save(fig, "decode-single.svg")
 # ---------------------------------------------------------------
 fig, ax = plt.subplots(figsize=(12.5, 6.2))
 names = ["TensorFold 4bpw\nprose", "TensorFold 4bpw\nJSON", "TensorFold 3.5bpw\nprose *", "vLLM 3.5bpw\n(1m-multi)"]
-vals = [325.1, 375.2, 114.2, 141.2]
+vals = [325.1, 375.2, 113.6, 141.2]
 bars = ax.bar(np.arange(4), vals, 0.55, color=[C_TF, C_TF, C_TF35, C_VLLM])
 for b, v in zip(bars, vals):
     ax.text(b.get_x() + b.get_width() / 2, v + 8, f"{v} tok/s", ha="center", fontsize=15, fontweight="bold")
@@ -133,8 +133,8 @@ save(fig, "decode-concurrency.svg")
 # ---------------------------------------------------------------
 fig, ax = plt.subplots(figsize=(13.5, 6.2))
 names = ["vLLM 3.5bpw\n@500K", "vLLM 3.5bpw\n@750K", "vLLM 3.5bpw\n@950K",
-         "TensorFold 4bpw\n@128k", "TensorFold 4bpw\n@1.008M", "TensorFold 3.5bpw\n@140k *"]
-vals = [2836.7, 2840.6, 2793.2, 3470.0, 2379.0, 1750.0]
+         "TensorFold 4bpw\n@128k", "TensorFold 4bpw\n@1.008M", "TensorFold 3.5bpw\n@150k *"]
+vals = [2836.7, 2840.6, 2793.2, 3470.0, 2379.0, 1900.0]
 bars = ax.bar(np.arange(6), vals, 0.6, color=[C_VLLM] * 3 + [C_TF] * 2 + [C_TF35])
 for b, v in zip(bars, vals):
     ax.text(b.get_x() + b.get_width() / 2, v + 55, f"{v:,.0f}", ha="center", fontsize=14, fontweight="bold")
@@ -143,7 +143,7 @@ ax.set_xticklabels(names)
 ax.set_ylim(0, 3950)
 ax.set_yticks(np.arange(0, 3501, 1000))
 style(ax, "Prefill throughput", "tok/s",
-      "TTFT-derived; * 3.5bpw runs 1024-row prefill chunks vs 2048 (fork kernel fix pending)")
+      "TTFT-derived; * 3.5bpw runs 1024-row prefill chunks vs 2048 (v0.6.5, fork kernel fix pending)")
 save(fig, "prefill.svg")
 
 # ---------------------------------------------------------------

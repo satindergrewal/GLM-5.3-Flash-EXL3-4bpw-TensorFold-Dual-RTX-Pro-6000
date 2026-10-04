@@ -1,4 +1,4 @@
-# GLM-5.3-Flash EXL3 - TensorFold v0.6 - Dual RTX Pro 6000 (4bpw stock + 3.5bpw mixed)
+# GLM-5.3-Flash EXL3 - TensorFold v0.6.5 (fork) - Dual RTX Pro 6000 (4bpw stock + 3.5bpw mixed)
 
 GLM-5.3-Flash on 2x RTX PRO 6000 (SM120, 96 GB each), single box, **two switchable
 arms** (`QUANT=4bpw|3.5bpw`): the unmodified stock TR3-4bpw checkpoint, or the
@@ -11,7 +11,7 @@ served from the byte-identical
 [brandonmusic/GLM-5.3-Flash-tr3-4bpw](https://huggingface.co/brandonmusic/GLM-5.3-Flash-tr3-4bpw)
 mirror). The 3.5bpw arm is the companion
 [k35 mixed encode](https://github.com/satindergrewal/GLM-5.3-Flash-EXL3-3.5bpw-Mixed-SM120-TP2)'s
-artifact. Both run on [TensorFold](https://github.com/ashhart/TensorFold) v0.6 in
+artifact. Both run on a fork of [TensorFold](https://github.com/ashhart/TensorFold) — upstream v0.6.5 merged with this recipe's mixed-rate support (branch `mixed-k34` of [satindergrewal/TensorFold](https://github.com/satindergrewal/TensorFold)) — in
 `COMM=nccl` mode — the first (to our knowledge) published TensorFold recipe for
 x86_64 discrete GPUs. The same 192 GB that needs a 3.5bpw mixed encode under
 vLLM holds stock 4bpw + the full 1M window here, because TensorFold's runtime
@@ -26,7 +26,7 @@ path; stock 4bpw keeps the stacked fast path.
 | Window allocated (4bpw, 2026-10-02) | 1,048,576 tokens, both ranks (88.09 / 86.29 GiB within 90.08 GiB budgets) |
 | Window allocated (3.5bpw, 2026-10-04) | 1,048,560 context served (`CONTEXT=1048576`), 77.4 / 79.2 GiB (vision on) — ~12.6 GiB spare |
 | Long-context recall (4bpw) | 826,051-token prompt @87% and 1.008M @90%: **retrieved exactly** |
-| Long-context recall (3.5bpw, 2026-10-04) | ~912k-token prompt @90% depth: **retrieved exactly** |
+| Long-context recall (3.5bpw, 2026-10-04) | ~912k-token prompt @90% depth: **retrieved exactly**; v0.6.5 merge cut the wall 23.3 → 9.1 min |
 | Health/geometry | rank 0 + rank 1 ready in ~209 s (warm caches); API healthy |
 | Vision (4bpw) | tower loaded; image cap raised to 128/request (see patches) |
 | Vision (3.5bpw, 2026-10-04) | **pass**: 3-image color ID at the 1M window; artifact ships the 4bpw chat template for TF's `--vision` |
@@ -63,7 +63,7 @@ wall for the batch. Greedy unless noted.
 | Prompt reuse, 64,416-token prompt | pass 1: 54.3 s → pass 2: **0.27 s** (~200x) | kept within the window pool even with `TF_GLM_CACHE_GIB=0`; only the most recent conversation's state is kept |
 | Vision, 2-image color ID | pass | correct order + colors |
 | GSM8K, 250-problem test slice, greedy | **97.2% (243/250)**, 220 s | DFlash2 drafting on; Mia's Spark number at 250: 98.0% |
-| GSM8K, 250-problem slice, QUANT=3.5bpw arm, greedy (2026-10-03) | **98.4% (246/250)** | post pick-stride fix, image v0.6.1-mixed-k34; full native window; GSM8K-25 on the same lane: 24/25 |
+| GSM8K, 250-problem slice, QUANT=3.5bpw arm, greedy (2026-10-03) | **98.4% (246/250)** | post pick-stride fix, image v0.6.5-mixed-k34 (upstream 0.6.5 merged); full native window; GSM8K-25 on the same lane: 24/25 |
 | DFlash2 draft acceptance | 73.9% (105,304 / 142,458 drafted) | across the whole benchmark session, 563 requests |
 
 Measurement caveats, stated plainly: decode streams counted engine deltas
@@ -89,12 +89,12 @@ TensorFold — Results above.
 | Max context | 98,304 | 1,000,000 | **1,048,560** (needle-verified at ~912k @90% depth) | **1,048,576** |
 | Weights | EXL3 K4 4bpw | EXL3 mixed 3.5bpw | EXL3 mixed 3.5bpw | **stock EXL3 TR3 4bpw** |
 | KV cache | nvfp4_ds_mla | fp8_ds_mla / calibrated NVFP4 MLA | fp8 (e4m3 latent + indexer) | fp8 (e4m3 latent + indexer) |
-| Decode single (thinking on) | not published | 143 tok/s | 77.1 tok/s | 63.2 tok/s |
-| Aggregate @4 streams | not published | 141.2 tok/s | 114.2 tok/s prose (early-EOS shortened generations) | **325.1 prose / 375.2 JSON** |
-| Prefill | not published | 2,793–2,841 tok/s @500–950K | ~1.75k tok/s @140k (TTFT 80.3 s) | ~3.5k @128k; ~2.4k effective @1.008M |
-| TTFT, ~2–3k prompt | not published | not comparable | 1.79 s | 0.74 s |
+| Decode single (thinking on) | not published | 143 tok/s | 81.0 tok/s (v0.6.5) | 63.2 tok/s |
+| Aggregate @4 streams | not published | 141.2 tok/s | 113.6 tok/s prose on v0.6.5 (early-EOS shortened generations) | **325.1 prose / 375.2 JSON** |
+| Prefill | not published | 2,793–2,841 tok/s @500–950K | ~1.9k tok/s @~150k (TTFT 80.7 s); ~1.67k effective @912k (v0.6.5) | ~3.5k @128k; ~2.4k effective @1.008M |
+| TTFT, ~2–3k prompt | not published | not comparable | 1.78 s | 0.74 s |
 | Prompt reuse, ~70k prompt | not published | — | 39.7 s cold → **0.13 s warm (~300x)** | 54.3 s → 0.27 s (~200x) |
-| Needle, ~912k-token prompt @90% depth | not published | — | **retrieved exactly**, 23.3 min wall (~650 tok/s effective incl. prefill) | 826k @87% and 1.008M @90%: retrieved exactly |
+| Needle, ~912k-token prompt @90% depth | not published | — | **retrieved exactly**, 9.1 min wall on v0.6.5 (~1.67k tok/s effective incl. prefill; 23.3 min on the pre-merge stack) | 826k @87% and 1.008M @90%: retrieved exactly |
 | GSM8K (greedy) | not published | 96.89 | **98.4%** (250-slice) | **97.2%** (250-slice) |
 | Images per request | vision smoke pass | 4 | **pass** (3-image color ID; artifact ships the 4bpw chat template for TF's `--vision`; 2026-10-04) | **128** |
 | Drafting | DFlash2, 5.74/7 mean accept | MTP3 (~2.4 mean); DFlash2 3.6–4.2 accept | DFlash2, **74.9%** accepted (2026-10-04 boot counters) | DFlash2, 73.9% accepted |
@@ -121,10 +121,9 @@ switching engines instead of switching quants.
 `QUANT=4bpw|3.5bpw` in `.env` switches `MODEL_DIR` and the served model id
 (`GLM-5.3-Flash-EXL3-4bpw` / `GLM-5.3-Flash-EXL3-3.5bpw-mixed`). An exported
 `QUANT` from the caller wins over `.env` (precedence-preserving source).
-Everything else — DFlash2, vision, window fit — is quant-agnostic. The 3.5bpw
-arm serves from the mixed image `tensorfold-glm53:v0.6.1-mixed-k34` (v0.6.0 +
-the fork's mixed-k34 python stack incl. the 2026-10-03 pick-stride fix); the
-4bpw arm needs no mixed support and runs the base image.
+Everything else — DFlash2, vision, window fit — is quant-agnostic. Both arms
+serve from the merged image `tensorfold-glm53:v0.6.5-mixed-k34` (TensorFold
+0.6.5 + the fork's mixed-rate support incl. the 2026-10-03 pick-stride fix).
 
 ### 3.5bpw under TensorFold: WORKING (2026-10-03)
 
@@ -172,9 +171,13 @@ different rates). The x3experts path takes widths per expert-projection tensor n
 so no per-rate sub-launching is needed. The 4bpw arm (all-k4, stacked path) is unaffected
 and serves the full 1M window at measured 97.2% GSM8K.
 
-Upstream TensorFold 0.6.2 declines mixed-bit rates and ships no logprobs on the
-GLM-5.3 backend; both stay fork-local work
-([satindergrewal/TensorFold, branch `mixed-k34`](https://github.com/satindergrewal/TensorFold/tree/mixed-k34)).
+**2026-10-04: upstream v0.6.5 merged into the fork** ([satindergrewal/TensorFold, branch
+`mixed-k34`](https://github.com/satindergrewal/TensorFold/tree/mixed-k34), commit `5cf0b3b`) —
+the symmetric two-rank exchange, the generic EXL3 route, API keys and the vLLM-metric mirrors
+came in; the mixed-rate support, the pick-stride fix and the fp8-KV stack were preserved and
+re-gated (GSM8K-250 98.4% unchanged; the ~912k needle wall dropped 23.3 → 9.1 min). Upstream
+still declines mixed-bit rates in its own loader, so the mixed-rate loader stays fork-local.
+Logprobs on the GLM-5.3 backend also remain unavailable (upstream ships none).
 
 ### Fidelity of the two quants, measured behaviorally
 

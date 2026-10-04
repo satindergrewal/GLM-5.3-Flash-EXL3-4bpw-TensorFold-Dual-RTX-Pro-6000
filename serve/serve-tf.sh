@@ -28,15 +28,16 @@ case "$QUANT" in
   4bpw)
     [[ -n "$MODEL_DIR_4BPW" ]] || { echo "ERROR: QUANT=4bpw needs MODEL_DIR_4BPW"; exit 1; }
     MODEL_DIR="$MODEL_DIR_4BPW"
-    TF_VERSION="${TF_VERSION:-v0.6.0}"
+    TF_VERSION="${TF_VERSION:-v0.6.5-mixed-k34}"
     SERVED_NAME="${SERVED_NAME:-GLM-5.3-Flash-EXL3-4bpw}"
     VISION="${VISION:-1}"
     ;;
   3.5bpw)
     [[ -n "$MODEL_DIR_35BPW" ]] || { echo "ERROR: QUANT=3.5bpw needs MODEL_DIR_35BPW"; exit 1; }
     MODEL_DIR="$MODEL_DIR_35BPW"
-    # the mixed arm needs the mixed-k34 image (per-expert-width MoE + the 2026-10-03 pick-stride fix)
-    TF_VERSION="${TF_VERSION:-v0.6.1-mixed-k34}"
+    # the merged fork image: TensorFold 0.6.5 + the mixed-k34 support (per-expert-width
+    # MoE, the pick-stride fix) - serves BOTH arms
+    TF_VERSION="${TF_VERSION:-v0.6.5-mixed-k34}"
     SERVED_NAME="${SERVED_NAME:-GLM-5.3-Flash-EXL3-3.5bpw-mixed}"
     # vision works on this arm since the artifact ships the 4bpw chat template
     # (chat_template.jinja = the 4bpw one; TF's --vision extends its media branch;
