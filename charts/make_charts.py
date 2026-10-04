@@ -117,9 +117,10 @@ save(fig, "decode-single.svg")
 fig, ax = plt.subplots(figsize=(12.5, 6.2))
 names = ["TensorFold 4bpw\nprose", "TensorFold 4bpw\nJSON", "TensorFold 3.5bpw\nprose", "vLLM 3.5bpw\n(1m-multi)"]
 vals = [325.1, 375.2, 334.0, 141.2]
+labels = ["325.1 tok/s", "375.2 tok/s", "308-360 tok/s", "141.2 tok/s"]
 bars = ax.bar(np.arange(4), vals, 0.55, color=[C_TF, C_TF, C_TF35, C_VLLM])
-for b, v in zip(bars, vals):
-    ax.text(b.get_x() + b.get_width() / 2, v + 8, f"{v} tok/s", ha="center", fontsize=15, fontweight="bold")
+for b, v, lab in zip(bars, vals, labels):
+    ax.text(b.get_x() + b.get_width() / 2, v + 8, lab, ha="center", fontsize=15, fontweight="bold")
 ax.set_xticks(np.arange(4))
 ax.set_xticklabels(names)
 ax.set_ylim(0, 430)
@@ -133,7 +134,7 @@ save(fig, "decode-concurrency.svg")
 # ---------------------------------------------------------------
 fig, ax = plt.subplots(figsize=(13.5, 6.2))
 names = ["vLLM 3.5bpw\n@500K", "vLLM 3.5bpw\n@750K", "vLLM 3.5bpw\n@950K",
-         "TensorFold 4bpw\n@128k", "TensorFold 4bpw\n@1.008M", "TensorFold 3.5bpw\n@150k *"]
+         "TensorFold 4bpw\n@128k", "TensorFold 4bpw\n@1.008M", "TensorFold 3.5bpw\n@166k *"]
 vals = [2836.7, 2840.6, 2793.2, 3470.0, 2379.0, 2650.0]
 bars = ax.bar(np.arange(6), vals, 0.6, color=[C_VLLM] * 3 + [C_TF] * 2 + [C_TF35])
 for b, v in zip(bars, vals):
@@ -143,7 +144,7 @@ ax.set_xticklabels(names)
 ax.set_ylim(0, 3950)
 ax.set_yticks(np.arange(0, 3501, 1000))
 style(ax, "Prefill throughput", "tok/s",
-      "TTFT-derived; 3.5bpw: two prefill lanes on (the copy-engine exchange is blocked on this box s mixed GPU pair)")
+      "TTFT-derived; 3.5bpw @166k: two prefill lanes on, 62.6-63.5 s cold TTFT (copy-engine exchange is blocked on this box's mixed GPU pair)")
 save(fig, "prefill.svg")
 
 # ---------------------------------------------------------------

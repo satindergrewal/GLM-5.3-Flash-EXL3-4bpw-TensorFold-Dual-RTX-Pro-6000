@@ -33,8 +33,9 @@ per arm starts it.
 
 Two RTX PRO 6000 Blackwell 96 GB GPUs at stock clocks, one host, driver 580.178.04. Decode tok/s are engine
 deltas (reasoning + content) over the decode window; aggregate is completion tokens divided by wall time for the
-batch. Greedy (temperature 0) unless noted. Numbers without a second date are the 2026-10-02 (4bpw) and
-2026-10-04 (3.5bpw, TensorFold 0.6.5 merge) measurements below; the two arms' protocols differ where noted.
+batch. Greedy (temperature 0) unless noted. Numbers without a second date are the 2026-10-02 (4bpw),
+2026-10-04 (3.5bpw, TensorFold 0.6.5 merge) and 2026-10-05 (3.5bpw, prefill lanes) measurements below;
+the two arms' protocols differ where noted.
 
 **Decode** (single stream and 4 concurrent streams; thinking on)
 
@@ -49,7 +50,7 @@ JSON single-stream up to **1.8x**, prose single-stream **1.19x**, GSM8K-250 **98
 **1,048,560 vs 983,024** — the one axis under vLLM is prefill at **0.94x**, hardware-gated as described below.
 
 \* the 3.5bpw 4-stream run used a shorter-generation protocol than the 4bpw's (early end-of-sequence);
-a like-for-like re-measure is pending. TTFT at a ~2-3k prompt: 0.74 s (4bpw) / 1.78 s (3.5bpw).
+a like-for-like re-measure is pending. TTFT at a ~2-3k prompt: 0.74 s (4bpw) / 1.61 s (3.5bpw, post-lanes).
 
 ![Single-stream decode](charts/decode-single.svg)
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the serving image for this recipe: base NVIDIA PyTorch container +
-# TensorFold v0.6.0 (pip, from this recipe's fork git tag) + patches/*.patch.
+# TensorFold 0.6.5-lineage (pip, from this recipe's fork git ref) + patches/*.patch.
 # The patches hash is baked into the image label `tf.patches`; serve scripts
 # and publish-docker.sh read it back from there.
 # Usage: ./build-image.sh [--no-cache]
