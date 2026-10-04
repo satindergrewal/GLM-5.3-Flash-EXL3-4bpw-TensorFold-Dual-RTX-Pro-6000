@@ -9,7 +9,7 @@ ARGS=(--tp 2 --parallel "${PARALLEL:-4}" --context "${CONTEXT:-0}"
       --max-tokens "${MAX_TOKENS:-32768}"
       --drafter /root/.cache/huggingface/hub/models--incoai--GLM-5.3-Flash-DFlash2/snapshots/bf582e4eacc1810f76656d1811693ff6c6737d2a
       --thinking)
-if [ "${VISION:-0}" = "1" ]; then ARGS+=(--vision); fi
+if [ "${VISION:-0}" = "1" ]; then ARGS+=(--vision --vision-max-images "${TENSORFOLD_GLM_MAX_IMAGES:-128}"); fi
 
 CUDA_VISIBLE_DEVICES="${RANK1_GPU:-1}" tensorfold serve /model --tp 2 \
   --rank 1 --master 127.0.0.1 --master-port "${MASTER_PORT:-29551}" "${ARGS[@]}" &
