@@ -38,7 +38,11 @@ case "$QUANT" in
     # the mixed arm needs the mixed-k34 image (per-expert-width MoE + the 2026-10-03 pick-stride fix)
     TF_VERSION="${TF_VERSION:-v0.6.1-mixed-k34}"
     SERVED_NAME="${SERVED_NAME:-GLM-5.3-Flash-EXL3-3.5bpw-mixed}"
-    VISION="${VISION:-0}"     # the k35 artifact's chat template has no media branch: text-only under TensorFold
+    # vision works on this arm since the artifact ships the 4bpw chat template
+    # (chat_template.jinja = the 4bpw one; TF's --vision extends its media branch;
+    # the k35-native template is kept as chat_template.jinja.k35-orig but has no
+    # branch TensorFold knows how to extend). Verified 2026-10-04: 3-image color ID.
+    VISION="${VISION:-1}"
     # the auto-fit stops one 64k block short of native for this arm (983,040); explicit
     # context serves the full window with ~12.6 GiB/GPU headroom (measured 2026-10-04)
     CONTEXT="${CONTEXT:-1048576}"

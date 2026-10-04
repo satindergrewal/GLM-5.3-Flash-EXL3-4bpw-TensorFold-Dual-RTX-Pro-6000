@@ -86,8 +86,8 @@ TensorFold — Results above.
 | Prompt reuse, ~70k prompt | not published | — | 39.7 s cold → **0.13 s warm (~300x)** | 54.3 s → 0.27 s (~200x) |
 | Needle, ~912k-token prompt @90% depth | not published | — | **retrieved exactly**, 23.3 min wall (~650 tok/s effective incl. prefill) | 826k @87% and 1.008M @90%: retrieved exactly |
 | GSM8K (greedy) | not published | 96.89 | **98.4%** (250-slice) | **97.2%** (250-slice) |
-| Images per request | vision smoke pass | 4 | not re-run post-fix | **128** |
-| Drafting | DFlash2, 5.74/7 mean accept | MTP3 (~2.4 mean); DFlash2 3.6–4.2 accept | server default | DFlash2, 73.9% accepted |
+| Images per request | vision smoke pass | 4 | **pass** (3-image color ID; artifact ships the 4bpw chat template for TF's `--vision`; 2026-10-04) | **128** |
+| Drafting | DFlash2, 5.74/7 mean accept | MTP3 (~2.4 mean); DFlash2 3.6–4.2 accept | DFlash2, **74.9%** accepted (2026-10-04 boot counters) | DFlash2, 73.9% accepted |
 
 ![Single-stream decode](charts/decode-single.svg)
 
