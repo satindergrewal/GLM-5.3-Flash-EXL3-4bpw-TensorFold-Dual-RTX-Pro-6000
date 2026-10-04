@@ -99,7 +99,7 @@ save(fig, "context-by-stack.svg")
 # ---------------------------------------------------------------
 fig, ax = plt.subplots(figsize=(11, 6.2))
 names = ["TensorFold 4bpw", "TensorFold 3.5bpw\n(mixed)", "vLLM 3.5bpw\n(1m-multi)"]
-vals = [63.2, 81.0, 143.0]
+vals = [63.2, 96.6, 143.0]
 bars = ax.bar(np.arange(3), vals, 0.5, color=[C_TF, C_TF35, C_VLLM])
 for b, v in zip(bars, vals):
     ax.text(b.get_x() + b.get_width() / 2, v + 3.5, f"{v} tok/s", ha="center", fontsize=15, fontweight="bold")
@@ -115,8 +115,8 @@ save(fig, "decode-single.svg")
 # 3. Aggregate decode at 4 concurrent streams
 # ---------------------------------------------------------------
 fig, ax = plt.subplots(figsize=(12.5, 6.2))
-names = ["TensorFold 4bpw\nprose", "TensorFold 4bpw\nJSON", "TensorFold 3.5bpw\nprose *", "vLLM 3.5bpw\n(1m-multi)"]
-vals = [325.1, 375.2, 113.6, 141.2]
+names = ["TensorFold 4bpw\nprose", "TensorFold 4bpw\nJSON", "TensorFold 3.5bpw\nprose", "vLLM 3.5bpw\n(1m-multi)"]
+vals = [325.1, 375.2, 206.0, 141.2]
 bars = ax.bar(np.arange(4), vals, 0.55, color=[C_TF, C_TF, C_TF35, C_VLLM])
 for b, v in zip(bars, vals):
     ax.text(b.get_x() + b.get_width() / 2, v + 8, f"{v} tok/s", ha="center", fontsize=15, fontweight="bold")
