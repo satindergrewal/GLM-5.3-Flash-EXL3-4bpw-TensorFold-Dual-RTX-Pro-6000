@@ -1,9 +1,9 @@
 <h1 align="center">GLM-5.3-Flash EXL3 on 2x RTX PRO 6000 with TensorFold</h1>
 
-<p align="center"><sub>by <a href="https://github.com/satindergrewal">Satinder Grewal</a> · built on <a href="https://github.com/MiaAI-Lab/GLM-5.3-Flash-EXL3-2x-DGX-Sparks-TensorFold">Mia's AI Lab's DGX Spark recipe</a> · mixed-rate EXL3 support in <a href="https://github.com/satindergrewal/TensorFold/tree/mixed-k34">a TensorFold fork</a></sub></p>
+<p align="center"><sub>by <a href="https://github.com/satindergrewal">Satinder Grewal</a> · built on <a href="https://github.com/MiaAI-Lab/GLM-5.3-Flash-EXL3-2x-DGX-Sparks-TensorFold">Mia's AI Lab's DGX Spark recipe</a> · mixed-rate EXL3 support and tuned-kernel pairing in <a href="https://github.com/satindergrewal/TensorFold/tree/mixed-k34-avx">a TensorFold fork</a></sub></p>
 
 <p align="center">
-  <a href="https://github.com/satindergrewal/TensorFold/tree/mixed-k34"><img src="https://img.shields.io/badge/TensorFold-v0.6.5_(fork)-A9D5CE?style=for-the-badge&amp;labelColor=151615" alt="TensorFold v0.6.5 fork"></a>
+  <a href="https://github.com/satindergrewal/TensorFold/tree/mixed-k34-avx"><img src="https://img.shields.io/badge/TensorFold-v0.6.5-pair_(fork)-A9D5CE?style=for-the-badge&amp;labelColor=151615" alt="TensorFold v0.6.5 fork"></a>
   <img src="https://img.shields.io/badge/GPUs-2x_RTX_PRO_6000-EEB07E?style=for-the-badge&amp;labelColor=151615" alt="2x RTX PRO 6000">
   <img src="https://img.shields.io/badge/Quants-4bpw_+3.5bpw_mixed-D99288?style=for-the-badge&amp;labelColor=151615" alt="4bpw and 3.5bpw mixed">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache--2.0-D99288?style=for-the-badge&amp;labelColor=151615" alt="Apache-2.0"></a>
@@ -34,7 +34,8 @@ per arm starts it.
 Two RTX PRO 6000 Blackwell 96 GB GPUs at stock clocks, one host, driver 580.178.04. Decode tok/s are engine
 deltas (reasoning + content) over the decode window; aggregate is completion tokens divided by wall time for the
 batch. Greedy (temperature 0) unless noted. Numbers without a second date are the 2026-10-02 (4bpw),
-2026-10-04 (3.5bpw, TensorFold 0.6.5 merge) and 2026-10-05 (3.5bpw, prefill lanes + NCCL stack match)
+2026-10-04 (3.5bpw, TensorFold 0.6.5 merge), 2026-10-05 (3.5bpw, prefill lanes + NCCL stack match) and
+2026-10-05 later (3.5bpw, paired tuned kernels — the decode table's paired rows and every prefill number below)
 measurements below;
 the two arms' protocols differ where noted.
 
@@ -42,18 +43,18 @@ the two arms' protocols differ where noted.
 
 | Concurrent requests | TensorFold 4bpw | TensorFold 3.5bpw mixed | vLLM 3.5bpw (reference) |
 | ---: | ---: | ---: | ---: |
-| 1 stream | 63.2 tok/s | **169.6 prose / 211–257 JSON** (release + lanes) | 143 tok/s |
-| 4 streams, prose | 325.1 tok/s | **308–360 tok/s** (release config) | 141.2 tok/s |
+| 1 stream | 63.2 tok/s | **130–158 prose / 216–219 JSON** (paired build; `TF_GLM_PAIR=0` reads 163–175 prose) | 143 tok/s |
+| 4 streams, prose | 325.1 tok/s | **334–339 tok/s** (paired build; 308–360 pre-pair) | 141.2 tok/s |
 | 4 streams, JSON | 375.2 tok/s | not re-run post-fix | not published |
 
 Head-to-head, 3.5bpw mixed on TensorFold versus the same-box vLLM 3.5bpw reference: **aggregate 2.2–2.5x**,
-JSON single-stream up to **1.8x**, prose single-stream **~1.0–1.1x** (1.19x on the universal decode path; the
+JSON single-stream **~1.5x** (up to 1.8x on the pre-pair build), prose single-stream **~1.0–1.1x** (1.19x on the universal decode path; the
 paired-kernel build's mm decode kernels trade some of that for prefill, below), GSM8K-250 **98.4% vs 96.89%**,
 served window **1,048,560 vs 983,024** — and prefill **~1.07x** (3,020 vs 2,793-2,841 tok/s) once the mixed
 quant rides the tuned kernels (see below).
 
 \* the 3.5bpw 4-stream run used a shorter-generation protocol than the 4bpw's (early end-of-sequence);
-a like-for-like re-measure is pending. TTFT at a ~2-3k prompt: 0.74 s (4bpw) / 1.61 s (3.5bpw, post-lanes).
+a like-for-like re-measure is pending. TTFT at a ~2-3k prompt: 0.74 s (4bpw) / 1.55 s (3.5bpw, paired build).
 
 ![Single-stream decode](charts/decode-single.svg)
 
@@ -73,9 +74,8 @@ vLLM reference at 2.79–2.84k) converge on the same ceiling, which is the host-
 pair, not an engine limit; published same-card numbers well above it (~8k prefill, ~280 decode) come
 from a W4A16 NVFP4/FP8 mixed quant on matched-SKU pairs where peer DMA and the copy-engine exchange work.
 
-The 3.5bpw arm prefills in 1024-row chunks against the 4bpw path's 2048 (a kernel shared-memory ceiling) —
-but widening the chunk is not the lever: 3072-row chunks boot and leave TTFT unchanged, because the
-routed-MoE span is exchange-wait bound, not kernel bound. The second lever was the kernels themselves: the
+Chunk width was the first suspect and measured a no-op (3072-row chunks boot and leave TTFT unchanged) — the
+routed-MoE span was kernel bound after all. The second lever was the kernels: the
 tuned expert stack (`exl3_mm`'s Y^T prompt kernels, the fused MoE glue) had never compiled in this lineage (a
 hand-merged cluster commit left the dec ladder unbuildable), so every EXL3 checkpoint ran the universal
 per-expert path. The fork (098a5f5) reconstructs those kernels and adds dual width-group stacking
@@ -97,9 +97,9 @@ torch-bundled stock NCCL 2.30.7; matching what the vLLM recipes actually run —
 build they `LD_PRELOAD`, plus `NCCL_P2P_LEVEL=4`, `NCCL_PROTO=LL,LL128,Simple`, `NCCL_CUMEM_ENABLE=0` —
 took cold TTFT@166k from 62.6–63.5 s to 59.7–60.9 s (best run 59.68 s; GSM8K-25 gate 24/25 unchanged,
 TTFT@3k 1.6–1.7 s unchanged). Swapping the net plugin, the all-gather exchange mode, and SHM CPU-proxy
-signaling each measured no further change. The remaining ~2–3% is engine-architecture, not driver-gated;
-the daily IPC watchdog stays armed anyway, and if a driver ever repairs peer DMA the copy-engine exchange
-can be gated on top (GSM8K-25 at 24/25, then TTFT@166k against <= ~59 s).
+signaling each measured no further change. Prefill now reads ~7–9% past the reference (3,020–3,060 vs 2,793–2,841 tok/s);
+the daily IPC watchdog stays armed anyway, and if a driver ever repairs peer DMA on this mixed pair the
+copy-engine exchange can be gated on top (GSM8K-25 at 24/25, then TTFT@166k against <= ~50 s).
 
 ![Prefill throughput](charts/prefill.svg)
 
@@ -195,7 +195,9 @@ curl -s http://127.0.0.1:8888/v1/chat/completions -H 'Content-Type: application/
 }'
 ```
 
-Up to 128 images per request (`TENSORFOLD_GLM_MAX_IMAGES`), at most 2,048 tokens a picture. The 3.5bpw
+Up to 128 images per request (`TENSORFOLD_GLM_MAX_IMAGES`), at most 2,048 tokens a picture; decoded-size
+gates are env-tunable on this fork (`TENSORFOLD_VISION_MAX_*` — 64 MP per image by default here, against the
+stock 16 MP). The 3.5bpw
 artifact ships the image-capable chat template (its own k35-native template has no branch TensorFold's
 `--vision` can extend; the original is kept as `chat_template.jinja.k35-orig` in the artifact).
 
@@ -216,7 +218,9 @@ Settings come from the **environment**, then **`.env`**, then the defaults in
 | `KV` | `fp8` | KV representation (`bf16` needs more memory) |
 | `DENSE` | `q4` | Dense-layer format (`q4`, `fp8`, or checkpoint `bf16`) |
 | `VISION` | `1` | Image input |
-| `TENSORFOLD_GLM_MAX_IMAGES` | `128` | Images per request |
+| `TENSORFOLD_GLM_MAX_IMAGES` | `128` | Images per request history (the launcher passes `--vision-max-images`) |
+| `TENSORFOLD_VISION_MAX_PIXELS` / `_DIMENSION` / `_TOTAL_PIXELS` / `_BYTES` / `_TOTAL_BYTES` | 64M / 16384 / 128M / 50M / 100M | Decode gates for big images (fork `d1b0bdd+`; the stock fork's 16M/8192/32M/10M/20M defaults stand) |
+| `TF_GLM_PAIR` | `1` | Mixed-rate experts through the paired tuned-kernel path (`0`: the single universal path — prefill ~10% slower, single-stream decode 163–175 tok/s) |
 | `ABLIT` | `0` | Reserved: `1` will serve an abliterated checkpoint per arm (`MODEL_DIR_ABLIT_*BPW`, not wired yet) |
 | `RANK0_GPU` / `RANK1_GPU` | `0` / `1` | GPU indices |
 
@@ -249,9 +253,13 @@ loader, the pick-stride fix and the fp8-KV stack were preserved and re-gated (GS
 the ~912k needle wall dropped 23.3 → 9.1 min). Upstream's own loader still declines mixed-bit markers, so
 the mixed-rate loader remains fork-local; logprobs on the GLM-5.3 backend also remain unavailable upstream.
 
-The decode-path kernels are shared with upstream; the mixed arm's prefill runs 1024-row chunks against the
-stacked path's 2048 (a group-launch shared-memory ceiling) — the known next performance lever, measured in
-the prefill table above.
+**2026-10-05 later: the tuned-kernel pair path** (fork tag
+[`v0.6.5-pair`](https://github.com/satindergrewal/TensorFold/tree/mixed-k34-avx), `d1b0bdd`): `exl3.cu`
+reconstructed from the canonical patch series (the hand-merged dec ladder had never compiled — see the
+prefill section), the WN decode shapes ported, dual width-group stacking (`exl3_pair.PairedExperts`) putting
+the width-64 experts on the Y^T prompt kernels, vision decode gates as env knobs, and the tool-call streamer
+tally crash fixed. The launcher builds both arms from this tag; the 4bpw arm's numbers above predate it
+(its uniform widths are next in line for the stacked loader).
 
 ## Quant fidelity
 

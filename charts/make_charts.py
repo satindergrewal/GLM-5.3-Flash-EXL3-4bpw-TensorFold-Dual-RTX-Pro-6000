@@ -116,8 +116,8 @@ save(fig, "decode-single.svg")
 # ---------------------------------------------------------------
 fig, ax = plt.subplots(figsize=(12.5, 6.2))
 names = ["TensorFold 4bpw\nprose", "TensorFold 4bpw\nJSON", "TensorFold 3.5bpw\nprose", "vLLM 3.5bpw\n(1m-multi)"]
-vals = [325.1, 375.2, 334.0, 141.2]
-labels = ["325.1 tok/s", "375.2 tok/s", "308-360 tok/s", "141.2 tok/s"]
+vals = [325.1, 375.2, 339.0, 141.2]
+labels = ["325.1 tok/s", "375.2 tok/s", "334-339 tok/s", "141.2 tok/s"]
 bars = ax.bar(np.arange(4), vals, 0.55, color=[C_TF, C_TF, C_TF35, C_VLLM])
 for b, v, lab in zip(bars, vals, labels):
     ax.text(b.get_x() + b.get_width() / 2, v + 8, lab, ha="center", fontsize=15, fontweight="bold")
@@ -126,7 +126,7 @@ ax.set_xticklabels(names)
 ax.set_ylim(0, 430)
 ax.set_yticks(np.arange(0, 401, 100))
 style(ax, "Aggregate decode, 4 concurrent streams", "tok/s (completion tokens / wall)",
-      "3.5bpw release config")
+      "3.5bpw paired tuned kernels (fork v0.6.5-pair)")
 save(fig, "decode-concurrency.svg")
 
 # ---------------------------------------------------------------
