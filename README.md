@@ -81,7 +81,9 @@ hand-merged cluster commit left the dec ladder unbuildable), so every EXL3 check
 per-expert path. The fork (098a5f5) reconstructs those kernels and adds dual width-group stacking
 (`exl3_pair.PairedExperts`): the width-64 experts stack into the tuned kernels' object, the width-48 experts
 keep the universal path, per-group id remap with sentinel scale rows — mixed-rate routing was already
-per-token, so the split is invisible to the model (GSM8K-25 gate 24/25 on every boot). Decode windows run the
+per-token, so the split is invisible to the model (GSM8K-25 gate 24/25 on every boot; the full GSM8K-250 greedy
+slice re-run on the paired build: 246/250 = 98.4%, identical to the pre-change number; aggregate @4 on the
+paired build: 339 tok/s). Decode windows run the
 mm dec kernels (~130–158 tok/s where the universal path read 163–175 — measured structural, not launch shapes:
 the WN decode rework was ported (fork d1b0bdd) and wn=1/wn=2 both measured, wn=2 worse; the paired path runs
 two routed passes a layer on tiny windows where the single-universal path ran one, and prefill overlaps them
