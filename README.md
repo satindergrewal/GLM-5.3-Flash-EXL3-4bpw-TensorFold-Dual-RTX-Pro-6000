@@ -82,9 +82,11 @@ per-expert path. The fork (098a5f5) reconstructs those kernels and adds dual wid
 (`exl3_pair.PairedExperts`): the width-64 experts stack into the tuned kernels' object, the width-48 experts
 keep the universal path, per-group id remap with sentinel scale rows — mixed-rate routing was already
 per-token, so the split is invisible to the model (GSM8K-25 gate 24/25 on every boot). Decode windows run the
-mm dec kernels (~130–158 tok/s where the universal path read 163–175; the WN launch-shape port is the known
-follow-up; `TF_GLM_PAIR=0` restores the universal path if single-stream decode matters more than prefill on
-a given day). The first lever was the NCCL stack. This host's
+mm dec kernels (~130–158 tok/s where the universal path read 163–175 — measured structural, not launch shapes:
+the WN decode rework was ported (fork d1b0bdd) and wn=1/wn=2 both measured, wn=2 worse; the paired path runs
+two routed passes a layer on tiny windows where the single-universal path ran one, and prefill overlaps them
+but decode cannot. `TF_GLM_PAIR=0` restores the universal path if single-stream decode matters more than
+prefill on a given day). The first lever was the NCCL stack. This host's
 mixed Workstation + Max-Q pair silently drops peer DMA at the CUDA runtime level — `cudaMemcpyPeerAsync`
 returns success and delivers zero bytes (verified by a runtime-level probe), IPC handles fail loudly with
 `cudaErrorInvalidValue`, and NCCL P2P hangs boot — so every engine on this host, the vLLM reference serves
