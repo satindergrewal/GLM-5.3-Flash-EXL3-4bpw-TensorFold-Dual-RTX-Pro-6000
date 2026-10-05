@@ -47,9 +47,10 @@ the two arms' protocols differ where noted.
 | 4 streams, JSON | 375.2 tok/s | not re-run post-fix | not published |
 
 Head-to-head, 3.5bpw mixed on TensorFold versus the same-box vLLM 3.5bpw reference: **aggregate 2.2–2.5x**,
-JSON single-stream up to **1.8x**, prose single-stream **1.19x**, GSM8K-250 **98.4% vs 96.89%**, served window
-**1,048,560 vs 983,024** — the one axis under vLLM is prefill at **0.97–0.98x** (0.94x before the NCCL stack
-match; see below).
+JSON single-stream up to **1.8x**, prose single-stream **~1.0–1.1x** (1.19x on the universal decode path; the
+paired-kernel build's mm decode kernels trade some of that for prefill, below), GSM8K-250 **98.4% vs 96.89%**,
+served window **1,048,560 vs 983,024** — and prefill **~1.07x** (3,020 vs 2,793-2,841 tok/s) once the mixed
+quant rides the tuned kernels (see below).
 
 \* the 3.5bpw 4-stream run used a shorter-generation protocol than the 4bpw's (early end-of-sequence);
 a like-for-like re-measure is pending. TTFT at a ~2-3k prompt: 0.74 s (4bpw) / 1.61 s (3.5bpw, post-lanes).
@@ -62,19 +63,28 @@ a like-for-like re-measure is pending. TTFT at a ~2-3k prompt: 0.74 s (4bpw) / 1
 
 | Prompt | TensorFold 4bpw | TensorFold 3.5bpw mixed | vLLM 3.5bpw (reference) |
 | --- | ---: | ---: | ---: |
-| ~2-150k tokens | ~3.5k tok/s @128k | **~2.73–2.78k tok/s @166k (TTFT 59.7–60.9 s, lanes + NCCL match)** | 2,793-2,841 tok/s @500-950K |
+| ~2-150k tokens | ~3.5k tok/s @128k | **~3.0k tok/s @166k (TTFT 54.4–55.2 s, lanes + NCCL + paired tuned kernels)** | 2,793-2,841 tok/s @500-950K |
 | ~1M tokens | 2,379 tok/s effective @1.008M | ~1.67k tok/s effective @912k | not published |
 
-Depth curve, 3.5bpw cold TTFT (unique prompts, no cache hits): 6K 3.1 s / 30K 14.1 s / 60K 25.9 s /
-120K 52.0 s / 166K 59.7–60.9 s — subtracting the ~1.6 s fixed overhead, the marginal prefill rate is
-~2.3–2.8k tok/s at every depth. Two independent engines on this box's mixed GPU pair (this arm and the
+Depth curve, 3.5bpw cold TTFT (unique prompts, no cache hits): 6K 2.7 s / 30K 12.0 s / 60K 23.4 s /
+120K 47.0 s / 166K 54.4–55.2 s — subtracting the ~1.5 s fixed overhead, the marginal prefill rate is
+~2.5–3.0k tok/s at every depth. Two independent engines on this box's mixed GPU pair (this arm and the
 vLLM reference at 2.79–2.84k) converge on the same ceiling, which is the host-transport physics of the
 pair, not an engine limit; published same-card numbers well above it (~8k prefill, ~280 decode) come
 from a W4A16 NVFP4/FP8 mixed quant on matched-SKU pairs where peer DMA and the copy-engine exchange work.
 
 The 3.5bpw arm prefills in 1024-row chunks against the 4bpw path's 2048 (a kernel shared-memory ceiling) —
 but widening the chunk is not the lever: 3072-row chunks boot and leave TTFT unchanged, because the
-routed-MoE span is exchange-wait bound, not kernel bound. The real lever was the NCCL stack. This host's
+routed-MoE span is exchange-wait bound, not kernel bound. The second lever was the kernels themselves: the
+tuned expert stack (`exl3_mm`'s Y^T prompt kernels, the fused MoE glue) had never compiled in this lineage (a
+hand-merged cluster commit left the dec ladder unbuildable), so every EXL3 checkpoint ran the universal
+per-expert path. The fork (098a5f5) reconstructs those kernels and adds dual width-group stacking
+(`exl3_pair.PairedExperts`): the width-64 experts stack into the tuned kernels' object, the width-48 experts
+keep the universal path, per-group id remap with sentinel scale rows — mixed-rate routing was already
+per-token, so the split is invisible to the model (GSM8K-25 gate 24/25 on every boot). Decode windows run the
+mm dec kernels (~130–158 tok/s where the universal path read 163–175; the WN launch-shape port is the known
+follow-up; `TF_GLM_PAIR=0` restores the universal path if single-stream decode matters more than prefill on
+a given day). The first lever was the NCCL stack. This host's
 mixed Workstation + Max-Q pair silently drops peer DMA at the CUDA runtime level — `cudaMemcpyPeerAsync`
 returns success and delivers zero bytes (verified by a runtime-level probe), IPC handles fail loudly with
 `cudaErrorInvalidValue`, and NCCL P2P hangs boot — so every engine on this host, the vLLM reference serves
